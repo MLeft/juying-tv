@@ -555,7 +555,7 @@ fun PlayerScreen(
                             )
                         )
                         subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
-                        subtitleView?.setBottomPaddingFraction(0.14f)
+                        subtitleView?.setBottomPaddingFraction(0.20f)
                     }
                 },
                 update = { view ->

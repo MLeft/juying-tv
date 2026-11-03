@@ -167,6 +167,7 @@ class WebDavClient(private val client: OkHttpClient) {
             .url(url)
             .method("PROPFIND", PROPFIND_BODY.toRequestBody("application/xml; charset=utf-8".toMediaType()))
             .header("Depth", depth.toString())
+            .header("Connection", "close")
             .header("User-Agent", USER_AGENT)
         if (config.username.isNotBlank()) {
             builder.header("Authorization", Credentials.basic(config.username, config.password))
