@@ -1,0 +1,1236 @@
+package com.juying.tv.ui.screens
+
+import android.graphics.Color as AndroidColor
+import android.graphics.Typeface
+import android.util.TypedValue
+import android.view.KeyEvent as AndroidKeyEvent
+import android.view.View
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AspectRatio
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistPlay
+import androidx.compose.material.icons.rounded.Replay10
+import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.SkipPrevious
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Subtitles
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
+import androidx.media3.ui.PlayerView
+import androidx.tv.foundation.lazy.list.TvLazyColumn
+import androidx.tv.foundation.lazy.list.items
+import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import com.juying.tv.AppViewModel
+import com.juying.tv.JuyingApp
+import com.juying.tv.data.db.MediaEntity
+import com.juying.tv.data.db.SeriesKind
+import com.juying.tv.data.repo.PlaybackBundle
+import com.juying.tv.data.repo.ResolvedEpisode
+import com.juying.tv.ui.components.Badge
+import com.juying.tv.ui.components.FocusableSurface
+import com.juying.tv.ui.components.ProgressLine
+import com.juying.tv.ui.components.TvButton
+import com.juying.tv.ui.theme.JuyingColors
+import com.juying.tv.util.formatDuration
+import com.juying.tv.util.formatEpisode
+import com.juying.tv.util.formatSpeed
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+private data class SubtitleOption(
+    val label: String,
+    val language: String?,
+    val group: Tracks.Group,
+    val trackIndex: Int
+)
+
+private data class MenuOption(
+    val label: String,
+    val selected: Boolean,
+    val onClick: () -> Unit
+)
+
+@Composable
+fun PlayerScreen(
+    viewModel: AppViewModel,
+    mediaId: String,
+    seriesId: String,
+    kidsMode: Boolean,
+    fromStart: Boolean = false,
+    onBack: () -> Unit
+) {
+    val context = LocalContext.current
+    val graph = remember { JuyingApp.graphOf(context) }
+    val scope = rememberCoroutineScope()
+    val autoNext by viewModel.autoNext.collectAsStateWithLifecycle()
+    val autoNextLatest by rememberUpdatedState(autoNext)
+
+    var bundle by remember { mutableStateOf<PlaybackBundle?>(null) }
+    var resolved by remember { mutableStateOf<ResolvedEpisode?>(null) }
+    var currentIndex by remember { mutableIntStateOf(-1) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var reload by remember { mutableIntStateOf(0) }
+    var overlayVisible by remember { mutableStateOf(true) }
+    var showEpisodes by remember { mutableStateOf(false) }
+    var showSubtitles by remember { mutableStateOf(false) }
+    var showSpeed by remember { mutableStateOf(false) }
+    var showAspect by remember { mutableStateOf(false) }
+    var interaction by remember { mutableIntStateOf(0) }
+    var playerResizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
+    var speed by remember { mutableFloatStateOf(1f) }
+    var positionMs by remember { mutableLongStateOf(0L) }
+    var durationMs by remember { mutableLongStateOf(0L) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var ended by remember { mutableStateOf(false) }
+    var subtitleOptions by remember { mutableStateOf<List<SubtitleOption>>(emptyList()) }
+    var selectedSubtitle by remember { mutableStateOf<String?>(null) }
+    var toast by remember { mutableStateOf<String?>(null) }
+    val rootFocus = remember { FocusRequester() }
+    val playFocus = remember { FocusRequester() }
+    val progressFraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+
+    LaunchedEffect(mediaId, reload) {
+        loading = true
+        error = null
+        try {
+            val prepared = viewModel.preparePlayback(mediaId, kidsMode, fromStart)
+            bundle = prepared
+            currentIndex = prepared.index
+            resolved = prepared.resolved
+        } catch (e: Exception) {
+            error = e.message ?: "打开视频失败"
+        } finally {
+            loading = false
+        }
+    }
+
+    val exoPlayer = remember(resolved?.url, reload) {
+        resolved?.let { r ->
+            val httpFactory = OkHttpDataSource.Factory(graph.okHttp)
+                .setDefaultRequestProperties(r.headers)
+            val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
+            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            ExoPlayer.Builder(context)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+                .apply {
+                    val builder = MediaItem.Builder().setUri(r.url)
+                    r.mime?.let { builder.setMimeType(it) }
+                    if (r.subtitles.isNotEmpty()) {
+                        builder.setSubtitleConfigurations(
+                            r.subtitles.map { sub ->
+                                MediaItem.SubtitleConfiguration.Builder(sub.uri)
+                                    .setMimeType(sub.mime)
+                                    .setLanguage(sub.language)
+                                    .setLabel(sub.label)
+                                    .build()
+                            }
+                        )
+                    }
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(C.USAGE_MEDIA)
+                            .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                            .build(),
+                        true
+                    )
+                    setMediaItem(builder.build())
+                    prepare()
+                    if (r.startPositionMs > 30_000) {
+                        seekTo(r.startPositionMs)
+                        toast = "已从上次观看位置继续"
+                    } else if (r.startPositionMs == 0L) {
+                        seekTo(0)
+                    }
+                    playWhenReady = true
+                    setPlaybackSpeed(speed)
+                }
+        }
+    }
+
+    fun saveCurrent() {
+        val player = exoPlayer ?: return
+        val r = resolved ?: return
+        val duration = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: r.durationMs
+        viewModel.saveProgress(r.mediaId, seriesId, player.currentPosition, duration)
+    }
+
+    fun seekBy(deltaMs: Long) {
+        val player = exoPlayer ?: return
+        val max = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: return
+        val target = (player.currentPosition + deltaMs).coerceIn(0L, max)
+        player.seekTo(target)
+        positionMs = target
+    }
+
+    fun togglePlay() {
+        val player = exoPlayer ?: return
+        if (player.playbackState == Player.STATE_ENDED || ended) {
+            player.seekTo(0)
+            ended = false
+            player.play()
+        } else if (player.isPlaying) {
+            player.pause()
+        } else {
+            player.play()
+        }
+        interaction++
+    }
+
+    fun switchTo(targetIndex: Int) {
+        val b = bundle ?: return
+        val episode = b.episodes.getOrNull(targetIndex) ?: return
+        saveCurrent()
+        exoPlayer?.pause()
+        scope.launch {
+            loading = true
+            error = null
+            showEpisodes = false
+            try {
+                val next = viewModel.resolveEpisode(episode.id)
+                currentIndex = targetIndex
+                resolved = next
+                ended = false
+                selectedSubtitle = null
+                overlayVisible = true
+                interaction++
+            } catch (e: Exception) {
+                error = e.message ?: "切换集数失败"
+            } finally {
+                loading = false
+            }
+        }
+    }
+
+    fun showControls() {
+        overlayVisible = true
+        interaction++
+    }
+
+    fun hideControls() {
+        overlayVisible = false
+        showEpisodes = false
+        showSubtitles = false
+        showSpeed = false
+        showAspect = false
+        rootFocus.requestFocus()
+    }
+
+    DisposableEffect(exoPlayer) {
+        val player = exoPlayer
+        if (player == null) {
+            onDispose { }
+        } else {
+            var autoSubtitleApplied = false
+            val listener = object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    when (playbackState) {
+                        Player.STATE_READY -> {
+                            durationMs = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: 0L
+                            val r = resolved
+                            if (r != null && durationMs > 0) {
+                                viewModel.updateDuration(r.mediaId, durationMs)
+                            }
+                        }
+                        Player.STATE_ENDED -> {
+                            ended = true
+                            overlayVisible = true
+                            interaction++
+                            val currentResolved = resolved
+                            if (currentResolved != null && durationMs > 0) {
+                                viewModel.saveProgress(
+                                    currentResolved.mediaId,
+                                    seriesId,
+                                    durationMs,
+                                    durationMs
+                                )
+                            }
+                            val b = bundle
+                            val canNext = autoNextLatest && b != null && currentIndex < b.episodes.lastIndex
+                            if (canNext) {
+                                switchTo(currentIndex + 1)
+                            } else {
+                                rootFocus.requestFocus()
+                            }
+                        }
+                    }
+                }
+
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    isPlaying = playing
+                    if (!playing) saveCurrent()
+                }
+
+                override fun onPlayerError(e: PlaybackException) {
+                    error = friendlyPlaybackError(e)
+                    loading = false
+                }
+
+                override fun onTracksChanged(tracks: Tracks) {
+                    val options = buildSubtitleOptions(tracks)
+                    subtitleOptions = options
+                    val r = resolved
+                    if (!autoSubtitleApplied && r != null && r.subtitles.isNotEmpty() && options.isNotEmpty()) {
+                        autoSubtitleApplied = true
+                        val preferred = options.firstOrNull {
+                            it.language?.startsWith("zh") == true ||
+                                it.label.contains("简") ||
+                                it.label.contains("繁")
+                        } ?: options.first()
+                        applySubtitle(player, preferred)
+                        selectedSubtitle = preferred.label
+                    }
+                }
+            }
+            player.addListener(listener)
+            onDispose {
+                player.removeListener(listener)
+                saveCurrent()
+                player.release()
+            }
+        }
+    }
+
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, exoPlayer) {
+        val player = exoPlayer
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) {
+                saveCurrent()
+                player?.pause()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    LaunchedEffect(exoPlayer, resolved?.mediaId) {
+        if (exoPlayer != null) {
+            while (isActive) {
+                positionMs = exoPlayer.currentPosition
+                durationMs = exoPlayer.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: durationMs
+                delay(500)
+            }
+        }
+    }
+
+    LaunchedEffect(exoPlayer) {
+        if (exoPlayer != null) {
+            while (isActive) {
+                delay(5_000)
+                saveCurrent()
+            }
+        }
+    }
+
+    LaunchedEffect(exoPlayer) {
+        if (exoPlayer != null) {
+            exoPlayer.setPlaybackSpeed(speed)
+            delay(220)
+            runCatching { playFocus.requestFocus() }
+        }
+    }
+
+    LaunchedEffect(overlayVisible) {
+        delay(100)
+        if (overlayVisible) {
+            runCatching { playFocus.requestFocus() }
+        } else {
+            runCatching { rootFocus.requestFocus() }
+        }
+    }
+
+    LaunchedEffect(overlayVisible, interaction, showEpisodes, showSubtitles, showSpeed, showAspect, isPlaying) {
+        if (overlayVisible && isPlaying && !showEpisodes && !showSubtitles && !showSpeed && !showAspect) {
+            delay(6_000)
+            hideControls()
+        }
+    }
+
+    LaunchedEffect(toast) {
+        if (toast != null) {
+            delay(2_400)
+            toast = null
+        }
+    }
+
+    BackHandler {
+        when {
+            resolved == null || error != null -> {
+                saveCurrent()
+                onBack()
+            }
+            showEpisodes -> showEpisodes = false
+            showSubtitles -> showSubtitles = false
+            showSpeed -> showSpeed = false
+            showAspect -> showAspect = false
+            overlayVisible -> hideControls()
+            else -> {
+                saveCurrent()
+                onBack()
+            }
+        }
+    }
+
+    val onKey: (androidx.compose.ui.input.key.KeyEvent) -> Boolean = { event ->
+        if (event.type != KeyEventType.KeyDown) {
+            false
+        } else {
+            interaction++
+            val code = event.nativeKeyEvent.keyCode
+            when (code) {
+                AndroidKeyEvent.KEYCODE_BACK -> {
+                    when {
+                        showEpisodes -> showEpisodes = false
+                        showSubtitles -> showSubtitles = false
+                        showSpeed -> showSpeed = false
+                        showAspect -> showAspect = false
+                        overlayVisible -> hideControls()
+                        else -> {
+                            saveCurrent()
+                            onBack()
+                        }
+                    }
+                    true
+                }
+                AndroidKeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+                AndroidKeyEvent.KEYCODE_MEDIA_PLAY,
+                AndroidKeyEvent.KEYCODE_MEDIA_PAUSE,
+                AndroidKeyEvent.KEYCODE_HEADSETHOOK -> {
+                    togglePlay()
+                    true
+                }
+                AndroidKeyEvent.KEYCODE_MEDIA_NEXT -> {
+                    if (currentIndex < (bundle?.episodes?.lastIndex ?: -1)) switchTo(currentIndex + 1)
+                    true
+                }
+                AndroidKeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                    if (currentIndex > 0) switchTo(currentIndex - 1)
+                    true
+                }
+                AndroidKeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    seekBy(10_000)
+                    true
+                }
+                AndroidKeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    seekBy(-10_000)
+                    true
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                    if (!overlayVisible) {
+                        seekBy(-10_000)
+                        true
+                    } else false
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                    if (!overlayVisible) {
+                        seekBy(10_000)
+                        true
+                    } else false
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_CENTER,
+                AndroidKeyEvent.KEYCODE_ENTER,
+                AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                    if (!overlayVisible) {
+                        showControls()
+                        true
+                    } else false
+                }
+                AndroidKeyEvent.KEYCODE_DPAD_UP,
+                AndroidKeyEvent.KEYCODE_DPAD_DOWN -> {
+                    if (!overlayVisible) {
+                        showControls()
+                        true
+                    } else false
+                }
+                else -> false
+            }
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(rootFocus)
+            .onPreviewKeyEvent(onKey)
+            .focusable()
+    ) {
+        if (exoPlayer != null) {
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        controllerAutoShow = false
+                        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                        this.player = exoPlayer
+                        resizeMode = playerResizeMode
+                        keepScreenOn = true
+                        isFocusable = false
+                        descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                        subtitleView?.setStyle(
+                            CaptionStyleCompat(
+                                AndroidColor.WHITE,
+                                AndroidColor.TRANSPARENT,
+                                AndroidColor.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                AndroidColor.BLACK,
+                                Typeface.DEFAULT_BOLD
+                            )
+                        )
+                        subtitleView?.setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, 24f)
+                        subtitleView?.setBottomPaddingFraction(0.14f)
+                    }
+                },
+                update = { view ->
+                    if (view.player !== exoPlayer) view.player = exoPlayer
+                    view.resizeMode = playerResizeMode
+                    view.keepScreenOn = true
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        if (loading) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.55f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(
+                        color = JuyingColors.Gold,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Spacer(Modifier.height(14.dp))
+                    Text("正在打开…", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+        }
+
+        error?.let { message ->
+            PlayerErrorPane(
+                message = message,
+                onRetry = {
+                    reload++
+                    error = null
+                },
+                onBack = {
+                    saveCurrent()
+                    onBack()
+                }
+            )
+        }
+
+        if (error == null && resolved != null) {
+            AnimatedVisibility(
+                visible = overlayVisible,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                PlayerControlsOverlay(
+                    bundle = bundle,
+                    currentIndex = currentIndex,
+                    isPlaying = isPlaying,
+                    ended = ended,
+                    positionMs = positionMs,
+                    durationMs = durationMs,
+                    progressFraction = progressFraction,
+                    kidsMode = kidsMode,
+                    playFocus = playFocus,
+                    onTogglePlay = { togglePlay() },
+                    onSeekBy = { seekBy(it) },
+                    onPrev = { if (currentIndex > 0) switchTo(currentIndex - 1) },
+                    onNext = { if (currentIndex < (bundle?.episodes?.lastIndex ?: -1)) switchTo(currentIndex + 1) },
+                    onEpisodes = { showEpisodes = true; showSubtitles = false; showSpeed = false; showAspect = false },
+                    onSubtitles = { showSubtitles = true; showEpisodes = false; showSpeed = false; showAspect = false },
+                    onSpeed = { showSpeed = true; showEpisodes = false; showSubtitles = false; showAspect = false },
+                    onAspect = { showAspect = true; showEpisodes = false; showSubtitles = false; showSpeed = false },
+                    onBack = {
+                        saveCurrent()
+                        onBack()
+                    }
+                )
+            }
+
+            if (showEpisodes) {
+                EpisodePanel(
+                    bundle = bundle,
+                    currentIndex = currentIndex,
+                    onSelect = { switchTo(it) },
+                    onClose = { showEpisodes = false }
+                )
+            }
+
+            if (showSubtitles) {
+                PlayerMenu(
+                    title = "字幕",
+                    options = buildList {
+                        add(
+                            MenuOption(
+                                label = "关闭字幕",
+                                selected = selectedSubtitle == null,
+                                onClick = {
+                                    exoPlayer?.let {
+                                        it.trackSelectionParameters = it.trackSelectionParameters.buildUpon()
+                                            .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+                                            .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true)
+                                            .build()
+                                    }
+                                    selectedSubtitle = null
+                                    showSubtitles = false
+                                }
+                            )
+                        )
+                        subtitleOptions.forEach { option ->
+                            add(
+                                MenuOption(
+                                    label = option.label,
+                                    selected = selectedSubtitle == option.label,
+                                    onClick = {
+                                        exoPlayer?.let { applySubtitle(it, option) }
+                                        selectedSubtitle = option.label
+                                        showSubtitles = false
+                                    }
+                                )
+                            )
+                        }
+                    },
+                    onClose = { showSubtitles = false }
+                )
+            }
+
+            if (showSpeed) {
+                val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
+                PlayerMenu(
+                    title = "播放速度",
+                    options = speeds.map { value ->
+                        MenuOption(
+                            label = if (value == 1f) "正常" else formatSpeed(value),
+                            selected = speed == value,
+                            onClick = {
+                                speed = value
+                                exoPlayer?.setPlaybackSpeed(value)
+                                showSpeed = false
+                            }
+                        )
+                    },
+                    onClose = { showSpeed = false }
+                )
+            }
+
+            if (showAspect) {
+                val modes = listOf(
+                    Triple("适应屏幕", AspectRatioFrameLayout.RESIZE_MODE_FIT, "保持比例"),
+                    Triple("裁切填充", AspectRatioFrameLayout.RESIZE_MODE_ZOOM, "去黑边"),
+                    Triple("拉伸铺满", AspectRatioFrameLayout.RESIZE_MODE_FILL, "拉伸画面"),
+                    Triple("原始尺寸", AspectRatioFrameLayout.RESIZE_MODE_FIXED_WIDTH, "按视频像素")
+                )
+                PlayerMenu(
+                    title = "画面比例",
+                    options = modes.map { (label, mode, _) ->
+                        MenuOption(
+                            label = label,
+                            selected = playerResizeMode == mode,
+                            onClick = {
+                                playerResizeMode = mode
+                                showAspect = false
+                            }
+                        )
+                    },
+                    onClose = { showAspect = false }
+                )
+            }
+        }
+
+        toast?.let { text ->
+            Box(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 150.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.75f))
+                    .padding(horizontal = 18.dp, vertical = 9.dp)
+            ) {
+                Text(text, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerControlsOverlay(
+    bundle: PlaybackBundle?,
+    currentIndex: Int,
+    isPlaying: Boolean,
+    ended: Boolean,
+    positionMs: Long,
+    durationMs: Long,
+    progressFraction: Float,
+    kidsMode: Boolean,
+    playFocus: FocusRequester,
+    onTogglePlay: () -> Unit,
+    onSeekBy: (Long) -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onEpisodes: () -> Unit,
+    onSubtitles: () -> Unit,
+    onSpeed: () -> Unit,
+    onAspect: () -> Unit,
+    onBack: () -> Unit
+) {
+    val series = bundle?.series
+    val episode = bundle?.episodes?.getOrNull(currentIndex)
+    val episodeLabel = when {
+        series == null || episode == null -> ""
+        series.kind == SeriesKind.MOVIE -> "电影"
+        else -> formatEpisode(episode.season, episode.episode, false)
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(130.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Black.copy(alpha = 0.82f), Color.Transparent)
+                    )
+                )
+        )
+        Column(
+            Modifier
+                .align(Alignment.TopStart)
+                .padding(horizontal = 36.dp, vertical = 22.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    series?.displayTitle ?: "正在播放",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (kidsMode) {
+                    Spacer(Modifier.width(10.dp))
+                    Badge("儿童模式", JuyingColors.KidsAccent)
+                }
+            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                listOfNotNull(
+                    episodeLabel.takeIf { it.isNotBlank() },
+                    episode?.title?.takeIf { it.isNotBlank() && it != series?.displayTitle }
+                ).joinToString(" · "),
+                color = Color.White.copy(alpha = 0.62f),
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, Color.Black.copy(alpha = 0.9f))
+                    )
+                )
+        )
+
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(horizontal = 36.dp, vertical = 20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (positionMs <= 0) "00:00" else formatDuration(positionMs),
+                    color = Color.White.copy(alpha = 0.86f),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.width(64.dp)
+                )
+                ProgressLine(progressFraction, Modifier.weight(1f))
+                Text(
+                    formatDuration(durationMs),
+                    color = Color.White.copy(alpha = 0.55f),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 14.dp).width(64.dp)
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                PlayerControl(
+                    icon = Icons.Rounded.PlaylistPlay,
+                    label = "选集",
+                    onClick = onEpisodes
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.SkipPrevious,
+                    label = "上一集",
+                    onClick = onPrev
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.Replay10,
+                    label = "后退 10 秒",
+                    onClick = { onSeekBy(-10_000) }
+                )
+                Spacer(Modifier.width(22.dp))
+                PlayerControl(
+                    icon = if (isPlaying && !ended) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    label = if (isPlaying && !ended) "暂停" else "播放",
+                    onClick = onTogglePlay,
+                    large = true,
+                    focusRequester = playFocus
+                )
+                Spacer(Modifier.width(22.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.Forward10,
+                    label = "前进 10 秒",
+                    onClick = { onSeekBy(10_000) }
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.SkipNext,
+                    label = "下一集",
+                    onClick = onNext
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.Subtitles,
+                    label = "字幕",
+                    onClick = onSubtitles
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.Speed,
+                    label = "倍速",
+                    onClick = onSpeed
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.AspectRatio,
+                    label = "画面",
+                    onClick = onAspect
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerControl(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    large: Boolean = false,
+    focusRequester: FocusRequester? = null
+) {
+    val size = if (large) 62.dp else 46.dp
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        FocusableSurface(
+            onClick = onClick,
+            modifier = Modifier
+                .size(size)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
+            shape = CircleShape,
+            focusedScale = 1.09f,
+            backgroundColor = if (large) JuyingColors.Gold.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.42f),
+            focusedBackgroundColor = if (large) JuyingColors.GoldBright else JuyingColors.Gold,
+            borderColor = if (large) Color.Transparent else Color.White.copy(alpha = 0.22f),
+            focusedBorderColor = Color.White
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = if (large) JuyingColors.OnGold else Color.White,
+                modifier = Modifier.align(Alignment.Center).size(if (large) 28.dp else 20.dp)
+            )
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            label,
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 10.sp,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun EpisodePanel(
+    bundle: PlaybackBundle?,
+    currentIndex: Int,
+    onSelect: (Int) -> Unit,
+    onClose: () -> Unit
+) {
+    val episodes = bundle?.episodes.orEmpty()
+    val firstFocus = remember { FocusRequester() }
+    val state = rememberTvLazyListState(
+        initialFirstVisibleItemIndex = (currentIndex - 2).coerceAtLeast(0)
+    )
+
+    LaunchedEffect(Unit) {
+        delay(100)
+        runCatching { firstFocus.requestFocus() }
+    }
+
+    BackHandler { onClose() }
+
+    Row(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .background(Color.Black.copy(alpha = 0.42f))
+        )
+        Column(
+            Modifier
+                .width(430.dp)
+                .fillMaxHeight()
+                .background(
+                    Brush.horizontalGradient(
+                        listOf(Color(0xF00B121D), Color(0xFF070B12))
+                    )
+                )
+                .padding(horizontal = 20.dp, vertical = 22.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("选集", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+                    Text(
+                        "${episodes.size} 集",
+                        color = JuyingColors.TextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                TvButton("关闭", onClose, primary = false)
+            }
+            Spacer(Modifier.height(12.dp))
+            TvLazyColumn(
+                state = state,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(episodes, key = { it.id }) { item ->
+                    val index = episodes.indexOfFirst { it.id == item.id }
+                    val current = index == currentIndex
+                    FocusableSurface(
+                        onClick = { onSelect(index) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .then(if (current) Modifier.focusRequester(firstFocus) else Modifier),
+                        shape = RoundedCornerShape(11.dp),
+                        focusedScale = 1.015f,
+                        backgroundColor = if (current) JuyingColors.Gold.copy(alpha = 0.12f) else JuyingColors.Surface.copy(alpha = 0.3f),
+                        focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                        borderColor = if (current) JuyingColors.Gold.copy(alpha = 0.5f) else JuyingColors.Outline.copy(alpha = 0.4f)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 13.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                episodeLabel(item, bundle?.series?.kind == SeriesKind.MOVIE),
+                                color = if (current) JuyingColors.Gold else JuyingColors.TextSecondary,
+                                style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.width(72.dp)
+                            )
+                            Text(
+                                item.title,
+                                color = JuyingColors.TextPrimary,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (current) {
+                                Box(
+                                    Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(JuyingColors.Gold)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun episodeLabel(media: MediaEntity, movie: Boolean): String =
+    if (movie) "电影" else if (media.season > 1) "S${media.season}E${media.episode}" else "第 ${media.episode} 集"
+
+@Composable
+private fun PlayerMenu(
+    title: String,
+    options: List<MenuOption>,
+    onClose: () -> Unit
+) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(100)
+        runCatching { firstFocus.requestFocus() }
+    }
+    BackHandler { onClose() }
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.25f))
+        )
+        Column(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 36.dp, bottom = 120.dp)
+                .width(280.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xF0101A28))
+                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(16.dp))
+                .padding(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    title,
+                    color = JuyingColors.TextSecondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "关闭",
+                    tint = JuyingColors.TextMuted,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            options.forEachIndexed { index, option ->
+                FocusableSurface(
+                    onClick = option.onClick,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(42.dp)
+                        .then(if (index == 0) Modifier.focusRequester(firstFocus) else Modifier),
+                    shape = RoundedCornerShape(9.dp),
+                    focusedScale = 1.01f,
+                    backgroundColor = if (option.selected) JuyingColors.Gold.copy(alpha = 0.12f) else Color.Transparent,
+                    focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                    borderColor = Color.Transparent,
+                    focusedBorderColor = JuyingColors.Gold
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            option.label,
+                            color = if (option.selected) JuyingColors.Gold else JuyingColors.TextPrimary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        if (option.selected) {
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(JuyingColors.Gold)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(3.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerErrorPane(
+    message: String,
+    onRetry: () -> Unit,
+    onBack: () -> Unit
+) {
+    val retryFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(100)
+        runCatching { retryFocus.requestFocus() }
+    }
+    Box(
+        Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.88f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            Modifier.width(560.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(
+                Modifier
+                    .size(62.dp)
+                    .clip(CircleShape)
+                    .background(JuyingColors.Red.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = JuyingColors.Red, modifier = Modifier.size(30.dp))
+            }
+            Spacer(Modifier.height(18.dp))
+            Text("无法播放", color = Color.White, style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(10.dp))
+            Text(
+                message,
+                color = JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "如果是夸克网盘资源，可能是 Cookie 失效或播放链接过期。返回媒体库重新进入播放通常可以刷新链接。",
+                color = JuyingColors.TextMuted,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TvButton("返回", onBack, primary = false)
+                TvButton("重试", onRetry, focusRequester = retryFocus)
+            }
+        }
+    }
+}
+
+private fun buildSubtitleOptions(tracks: Tracks): List<SubtitleOption> {
+    val result = ArrayList<SubtitleOption>()
+    tracks.groups.forEach { group ->
+        if (group.type != C.TRACK_TYPE_TEXT) return@forEach
+        for (index in 0 until group.length) {
+            val format = group.getTrackFormat(index)
+            val label = format.label
+                ?: format.language
+                ?: "字幕 ${result.size + 1}"
+            result += SubtitleOption(
+                label = label,
+                language = format.language,
+                group = group,
+                trackIndex = index
+            )
+        }
+    }
+    return result
+}
+
+private fun applySubtitle(player: ExoPlayer, option: SubtitleOption) {
+    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        .setOverrideForType(TrackSelectionOverride(option.group.mediaTrackGroup, option.trackIndex))
+        .build()
+}
+
+private fun friendlyPlaybackError(error: PlaybackException): String {
+    val detail = error.errorCodeName
+    val message = error.message ?: ""
+    return when {
+        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
+            "媒体服务器返回了错误状态。请检查媒体源地址、账号权限，或重新登录。"
+        error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
+            "找不到视频文件，可能已被移动或删除。请重新扫描媒体源。"
+        error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
+            error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED ->
+            "电视硬件解码器不支持该视频格式，可以尝试更换片源或使用 H.264/AAC 版本。"
+        error.errorCode == PlaybackException.ERROR_CODE_TIMEOUT ->
+            "连接超时，请检查网络后重试。"
+        message.isNotBlank() -> "$message（$detail）"
+        else -> "播放器错误：$detail"
+    }
+}
