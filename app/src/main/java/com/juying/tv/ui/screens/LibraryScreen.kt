@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Collections
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +59,7 @@ import coil.compose.AsyncImage
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.CollectionEntity
 import com.juying.tv.data.db.SeriesEntity
+import com.juying.tv.data.db.SeriesKind
 import com.juying.tv.ui.components.Badge
 import com.juying.tv.ui.components.ConfirmDialog
 import com.juying.tv.ui.components.EmptyState
@@ -97,10 +99,25 @@ fun LibraryScreen(
 
     val visible = if (kidsMode) kidsSeries else allSeries
     val visibleById = remember(visible) { visible.associateBy { it.id } }
-
     var tab by remember { mutableStateOf(if (kidsMode) LibraryTab.ALL else LibraryTab.COLLECTIONS) }
     var showCreate by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    var kindFilter by remember { mutableStateOf("ALL") }
     var deleteTarget by remember { mutableStateOf<CollectionEntity?>(null) }
+    val filtered = remember(visible, searchQuery, kindFilter) {
+        visible.filter { series ->
+            val kindOk = when (kindFilter) {
+                "SERIES" -> series.kind == SeriesKind.SERIES
+                "MOVIE" -> series.kind == SeriesKind.MOVIE
+                else -> true
+            }
+            val queryOk = searchQuery.isBlank() ||
+                series.displayTitle.contains(searchQuery.trim(), ignoreCase = true)
+            kindOk && queryOk
+        }
+    }
+    val hasActiveFilter = searchQuery.isNotBlank() || kindFilter != "ALL"
     val firstTabFocus = remember { FocusRequester() }
     val firstContentFocus = remember { FocusRequester() }
     RegisterScreenFocus(if (kidsMode) firstContentFocus else firstTabFocus)
@@ -153,14 +170,38 @@ fun LibraryScreen(
             Spacer(Modifier.height(20.dp))
         }
 
+        if (kidsMode || tab == LibraryTab.ALL) {
+            SearchFilterRow(
+                query = searchQuery,
+                kind = kindFilter,
+                count = filtered.size,
+                onSearch = { showSearch = true },
+                onQueryChange = { searchQuery = it },
+                onKindChange = { kindFilter = it }
+            )
+            Spacer(Modifier.height(14.dp))
+        }
+
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                kidsMode -> AllSeriesGrid(
-                    series = visible,
-                    onOpenSeries = onOpenSeries,
-                    emptyAction = { viewModel.scanAll() },
-                    firstFocus = firstContentFocus
-                )
+                kidsMode -> {
+                    if (filtered.isEmpty() && visible.isNotEmpty() && hasActiveFilter) {
+                        EmptyState(
+                            title = "没有匹配的内容",
+                            description = "试试其他关键词，或清除筛选条件。",
+                            actionText = "清除筛选",
+                            action = { searchQuery = ""; kindFilter = "ALL" },
+                            focusRequester = firstContentFocus
+                        )
+                    } else {
+                        AllSeriesGrid(
+                            series = filtered,
+                            onOpenSeries = onOpenSeries,
+                            emptyAction = { viewModel.scanAll() },
+                            firstFocus = firstContentFocus
+                        )
+                    }
+                }
                 tab == LibraryTab.COLLECTIONS -> CollectionsContent(
                     collections = collections,
                     collectionItems = collectionItems,
@@ -170,12 +211,24 @@ fun LibraryScreen(
                     onEditCollection = onEditCollection,
                     firstContentFocus = firstContentFocus
                 )
-                tab == LibraryTab.ALL -> AllSeriesGrid(
-                    series = visible,
-                    onOpenSeries = onOpenSeries,
-                    emptyAction = onOpenSources,
-                    firstFocus = firstContentFocus
-                )
+                tab == LibraryTab.ALL -> {
+                    if (filtered.isEmpty() && visible.isNotEmpty() && hasActiveFilter) {
+                        EmptyState(
+                            title = "没有匹配的内容",
+                            description = "试试其他关键词，或清除筛选条件。",
+                            actionText = "清除筛选",
+                            action = { searchQuery = ""; kindFilter = "ALL" },
+                            focusRequester = firstContentFocus
+                        )
+                    } else {
+                        AllSeriesGrid(
+                            series = filtered,
+                            onOpenSeries = onOpenSeries,
+                            emptyAction = onOpenSources,
+                            firstFocus = firstContentFocus
+                        )
+                    }
+                }
                 else -> ManageContent(
                     collections = collections,
                     collectionItems = collectionItems,
@@ -192,6 +245,20 @@ fun LibraryScreen(
                 )
             }
         }
+    }
+
+    if (showSearch) {
+        TextInputDialog(
+            title = "搜索媒体库",
+            label = "片名关键词",
+            initialValue = searchQuery,
+            placeholder = "输入动画、剧集或电影名称",
+            onDismiss = { showSearch = false },
+            onSave = {
+                searchQuery = it.trim()
+                showSearch = false
+            }
+        )
     }
 
     if (showCreate) {
@@ -221,6 +288,64 @@ fun LibraryScreen(
                 deleteTarget = null
             },
             onDismiss = { deleteTarget = null }
+        )
+    }
+}
+
+@Composable
+private fun SearchFilterRow(
+    query: String,
+    kind: String,
+    count: Int,
+    onSearch: () -> Unit,
+    onQueryChange: (String) -> Unit,
+    onKindChange: (String) -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        FocusableSurface(
+            onClick = onSearch,
+            modifier = Modifier.width(250.dp).height(42.dp),
+            shape = RoundedCornerShape(50),
+            focusedScale = 1.02f,
+            backgroundColor = JuyingColors.Surface.copy(alpha = 0.45f),
+            focusedBackgroundColor = JuyingColors.SurfaceFocused
+        ) {
+            Row(
+                Modifier.padding(horizontal = 15.dp).fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Rounded.Search,
+                    contentDescription = null,
+                    tint = JuyingColors.TextSecondary,
+                    modifier = Modifier.size(17.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    if (query.isBlank()) "搜索片名" else query,
+                    color = if (query.isBlank()) JuyingColors.TextMuted else JuyingColors.TextPrimary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        if (query.isNotBlank()) {
+            TvChip("清除", onClick = { onQueryChange("") })
+        }
+        TvChip("全部", selected = kind == "ALL", onClick = { onKindChange("ALL") })
+        TvChip("剧集", selected = kind == "SERIES", onClick = { onKindChange("SERIES") })
+        TvChip("电影", selected = kind == "MOVIE", onClick = { onKindChange("MOVIE") })
+        Spacer(Modifier.weight(1f))
+        Text(
+            "$count 部",
+            color = JuyingColors.TextMuted,
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }
@@ -339,13 +464,13 @@ private fun CollectionCard(
             Column(
                 Modifier
                     .align(Alignment.CenterStart)
-                    .padding(20.dp)
-                    .fillMaxWidth(0.62f)
+                    .padding(16.dp)
+                    .fillMaxWidth(0.68f)
             ) {
                 Text(
                     collection.name,
                     color = Color.White,
-                    style = MaterialTheme.typography.headlineMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis

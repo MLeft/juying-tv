@@ -11,10 +11,12 @@ package com.juying.tv.data.source
  */
 object MediaNameParser {
     private val sxxeRegex = Regex("""(?i)\bS(\d{1,2})[\s._-]*E(\d{1,3})\b""")
-    private val cnEpisodeRegex = Regex("""第\s*(\d{1,4})\s*[集话話期]""")
+    private val cnEpisodeRegex = Regex("""第\s*(\d{1,4})\s*[集话話期节節课課]""")
     private val epPrefixRegex = Regex("""(?i)(?:^|[\s._\-\[【(])(?:EP?|E)(\d{1,3})(?=[\s._\-\]】)]|$)""")
     private val bracketEpisodeRegex = Regex("""[\[【(]\s*(\d{1,3})\s*(?:v\d)?\s*[\]】)]""")
+    private val postBracketEpisodeRegex = Regex("""[】\]]\s*(\d{1,3})(?:[.\s_-]|$)""")
     private val standaloneEpisodeRegex = Regex("""(?:^|[\s._-])(\d{1,3})(?:v\d)?(?:[\s._-]|$)""")
+    private val leadingNumberRegex = Regex("""^(\d{1,3})(?=[^\d])""")
     private val seasonCnRegex = Regex("""第\s*(\d{1,2})\s*季""")
     private val seasonEnRegex = Regex("""(?i)\bSeason\s*(\d{1,2})\b""")
     private val seasonSRegex = Regex("""(?i)\bS(\d{1,2})\b""")
@@ -27,6 +29,8 @@ object MediaNameParser {
     private val codecNumbers = setOf(264, 265, 266)
 
     private val noiseKeywords = listOf(
+        "无字幕", "無字幕", "外挂字幕", "外掛字幕", "内嵌字幕", "內嵌字幕",
+        "中文字幕", "简繁字幕", "簡繁字幕", "外挂srt", "外掛srt", "无水印", "無水印",
         "1080p", "720p", "2160p", "480p", "4k", "8k", "hdr10", "hdr", "sdr",
         "hevc", "avc", "x265", "x264", "h.264", "h.265", "h264", "h265",
         "10bit", "8bit", "aac", "ac3", "eac3", "dts", "flac", "truehd", "atmos",
@@ -82,6 +86,14 @@ object MediaNameParser {
         }
 
         if (!explicit) {
+            postBracketEpisodeRegex.find(base)?.let {
+                episode = it.groupValues[1].toIntOrNull() ?: 1
+                hasMarker = true
+                explicit = true
+            }
+        }
+
+        if (!explicit) {
             bracketEpisodeRegex.findAll(base).forEach { match ->
                 if (!explicit) {
                     val value = match.groupValues[1].toIntOrNull() ?: 0
@@ -90,6 +102,16 @@ object MediaNameParser {
                         hasMarker = true
                         explicit = true
                     }
+                }
+            }
+        }
+
+        if (!hasMarker) {
+            leadingNumberRegex.find(base)?.let { match ->
+                val value = match.groupValues[1].toIntOrNull() ?: 0
+                if (value in 1..199 && value !in resolutionNumbers && value !in codecNumbers) {
+                    episode = value
+                    hasMarker = true
                 }
             }
         }
@@ -121,7 +143,8 @@ object MediaNameParser {
         var groupTitle = title
         if (hasMarker && !explicit) {
             groupTitle = title
-                .replace(Regex("""(?:^|[\s._-])\d{1,3}(?:v\d)?(?:[\s._-]|$)"""), " ")
+                .replace(Regex("""^\d{1,3}(?:v\d)?[\s._-]+"""), "")
+                .replace(Regex("""[\s._-]+\d{1,3}(?:v\d)?$"""), "")
                 .replace(Regex("""\s{2,}"""), " ")
                 .trim(' ', '-', '_', '.', '·')
             if (groupTitle.isBlank()) groupTitle = title
@@ -139,8 +162,7 @@ object MediaNameParser {
 
     fun cleanTitle(raw: String): String {
         if (raw.isBlank()) return ""
-        var text = raw.substringBeforeLast('.', raw)
-        text = text.replace('_', ' ').replace('.', ' ')
+        var text = raw.replace('_', ' ').replace('.', ' ')
 
         text = bracketRegex.replace(text) { match ->
             val inner = match.groupValues[1].trim()
@@ -161,6 +183,7 @@ object MediaNameParser {
             text = text.replace(keyword, " ")
         }
         text = text.replace(Regex("""[\[\(【（\]\)】）{}]"""), " ")
+        text = text.replace(Regex("""[，、,;；]+"""), " ")
         text = separatorRegex.replace(text, " ")
         text = text.replace(Regex("""\s{2,}"""), " ")
         return text.trim(' ', '-', '_', '.', '·', '|', '+', '&')
@@ -175,8 +198,7 @@ object MediaNameParser {
     }
 
     private fun fallbackClean(raw: String): String {
-        var text = raw.substringBeforeLast('.', raw)
-        text = text.replace('_', ' ').replace('.', ' ')
+        var text = raw.replace('_', ' ').replace('.', ' ')
         text = bracketRegex.replace(text) { match ->
             val inner = match.groupValues[1].trim()
             if (dropBracket(inner, keepAsciiNames = true)) " " else " $inner "

@@ -70,7 +70,13 @@ data class SeriesEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
 ) {
-    val displayTitle: String get() = customTitle?.takeIf { it.isNotBlank() } ?: autoTitle
+    val displayTitle: String
+        get() {
+            val custom = customTitle?.takeIf { it.isNotBlank() }
+            if (custom != null) return custom
+            val stripped = autoTitle.replace(Regex("""^\d{1,3}[.\s_-]+(?=\S)"""), "").trim()
+            return stripped.ifBlank { autoTitle }
+        }
 }
 
 @Entity(

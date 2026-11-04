@@ -40,9 +40,26 @@ object MediaGrouper {
                 val explicitCount = pairs.count { it.second.explicitEpisode }
                 val markerCount = pairs.count { it.second.hasEpisodeMarker }
                 val distinctGroupTitles = pairs.map { it.second.groupTitle.lowercase().trim() }.distinct()
+                val numericPrefixCount = pairs.count { (file, _) ->
+                    Regex("""^\d{1,3}(?:[.\s_-]|(?=\p{L})|$)""").containsMatchIn(file.name)
+                }
+                val titlePrefix = commonPrefix(pairs.map { it.second.groupTitle })
+                val folderSuggestsSeries = folderTitle != null && (
+                    folderTitle.contains("集") ||
+                        folderTitle.contains("季") ||
+                        folderTitle.contains("合集") ||
+                        folderTitle.contains("系列") ||
+                        Regex("""(?i)(season|episode|ep\s*\d+)""").containsMatchIn(folderTitle)
+                    )
 
+                // 同一命名文件夹中的「001.xxx」「002.xxx」通常是一季剧集；
+                // 数字前缀 + 文件夹名带“集/季/合集”等提示时按剧集归并，避免每集都变成电影。
                 val isSeries = when {
                     pairs.size >= 2 && explicitCount >= 2 -> true
+                    pairs.size >= 2 && folderTitle != null && titlePrefix.length >= 6 -> true
+                    pairs.size >= 2 && folderTitle != null && folderSuggestsSeries -> true
+                    pairs.size >= 2 && folderTitle != null &&
+                        numericPrefixCount >= 5 && numericPrefixCount * 10 >= pairs.size * 6 -> true
                     pairs.size >= 2 && explicitCount == 0 && markerCount >= 2 && distinctGroupTitles.size == 1 -> true
                     pairs.size == 1 && pairs.first().second.explicitEpisode -> true
                     pairs.size >= 2 && explicitCount >= 1 && distinctGroupTitles.size == 1 -> true
@@ -70,7 +87,14 @@ object MediaGrouper {
                     }
                 } else {
                     pairs.forEach { (file, parsed) ->
-                        val title = parsed.title.ifBlank { file.name.substringBeforeLast('.') }
+                        val numericTitle = parsed.title.isBlank() || parsed.title.all { it.isDigit() || it.isWhitespace() }
+                        val numericPrefix = Regex("""^\d{1,3}(?:[.\s_-]|$)""").containsMatchIn(parsed.title)
+                        val title = when {
+                            folderTitle != null && (numericTitle || numericPrefix) -> folderTitle
+                            !numericTitle -> parsed.title
+                            folderTitle != null -> folderTitle
+                            else -> file.name.substringBeforeLast('.')
+                        }
                         val key = "$folder::${file.remoteId}"
                         val builder = GroupBuilder(key, SeriesKind.MOVIE)
                         builder.title = title
@@ -96,6 +120,23 @@ object MediaGrouper {
                 files = ordered
             )
         }.sortedWith(compareBy({ it.title.lowercase() }, { it.year ?: 0 }))
+    }
+
+    private fun commonPrefix(values: List<String>): String {
+        if (values.isEmpty()) return ""
+        var prefix = values.first().trim()
+        for (value in values.drop(1)) {
+            var index = 0
+            val other = value.trim()
+            while (index < prefix.length && index < other.length &&
+                prefix[index].equals(other[index], ignoreCase = true)
+            ) {
+                index++
+            }
+            prefix = prefix.substring(0, index).trim()
+            if (prefix.length < 3) break
+        }
+        return prefix.trim()
     }
 
     private fun parentOf(folder: String): String {

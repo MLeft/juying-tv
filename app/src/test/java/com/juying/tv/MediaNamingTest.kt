@@ -100,6 +100,90 @@ class MediaNamingTest {
         assertEquals(setOf("Frieren", "Spy x Family"), groups.map { it.title }.toSet())
     }
 
+
+    @Test
+    fun keepsCompleteTitleWhenFileNameUsesDotAfterEpisodeNumber() {
+        val parsed = MediaNameParser.parse("001.Wow!Yellow Unit 1 hello video_story.mp4")
+        assertEquals(1, parsed.episode)
+        assertEquals("Wow!Yellow Unit 1 hello video story", parsed.groupTitle)
+    }
+
+    @Test
+    fun groupsNumericEpisodeFilesInsideNamedSeriesFolder() {
+        val groups = MediaGrouper.group(
+            listOf(
+                video("/旺仔/第一级 黄色 33集全/001.Wow!Yellow Unit 1 hello video_story.mp4"),
+                video("/旺仔/第一级 黄色 33集全/002.Wow!Yellow Unit 2 story.mp4")
+            )
+        )
+        assertEquals(1, groups.size)
+        assertEquals(SeriesKind.SERIES, groups.first().kind)
+        assertEquals(2, groups.first().files.size)
+        assertEquals("第一级 黄色 33集全", groups.first().title)
+    }
+
+    @Test
+    fun doesNotTruncateFolderTitleAtDots() {
+        val cleaned = MediaNameParser.cleanFolderName("01.完整版（1-8级241集）无字幕，外挂srt")
+        assertTrue(cleaned != null && cleaned.startsWith("01 完整版"))
+        assertTrue(cleaned!!.contains("241集"))
+    }
+
+
+    @Test
+    fun parsesEpisodeAfterBracketedShowName() {
+        val first = MediaNameParser.parse("【01 初唐诗坛】01. 唐朝的诗歌概况.mp4")
+        val last = MediaNameParser.parse("【01 初唐诗坛】08. 陈子昂《登幽州台歌》赏析.mp4")
+        assertEquals(1, first.episode)
+        assertEquals(8, last.episode)
+        assertTrue(first.explicitEpisode)
+    }
+
+    @Test
+    fun groupsBracketedShowEpisodesIntoSeries() {
+        val groups = MediaGrouper.group(
+            listOf(
+                video("/旺仔/历代文学课堂/01-初唐诗坛【01-08】/【01 初唐诗坛】01. 唐朝的诗歌概况.mp4"),
+                video("/旺仔/历代文学课堂/01-初唐诗坛【01-08】/【01 初唐诗坛】02. 王勃的创作风格、代表作品.mp4")
+            )
+        )
+        assertEquals(1, groups.size)
+        assertEquals(SeriesKind.SERIES, groups.first().kind)
+        assertEquals(2, groups.first().files.size)
+    }
+
+
+    @Test
+    fun parsesLeadingNumberWithoutSeparator() {
+        val parsed = MediaNameParser.parse("01Numberblocks Series One.mp4")
+        assertEquals(1, parsed.episode)
+        assertTrue(parsed.hasEpisodeMarker)
+    }
+
+    @Test
+    fun groupsNumberedNumberblocksFolder() {
+        val groups = MediaGrouper.group(
+            listOf(
+                video("/旺仔/Numberblocks/01Numberblocks Series One.mp4"),
+                video("/旺仔/Numberblocks/02Numberblocks Series One.mp4"),
+                video("/旺仔/Numberblocks/03Numberblocks Series One.mp4"),
+                video("/旺仔/Numberblocks/04Numberblocks Series One.mp4"),
+                video("/旺仔/Numberblocks/05Numberblocks Series One.mp4")
+            )
+        )
+        assertEquals(1, groups.size)
+        assertEquals(SeriesKind.SERIES, groups.first().kind)
+        assertEquals(5, groups.first().files.size)
+    }
+
+
+    @Test
+    fun parsesChineseLessonMarker() {
+        val parsed = MediaNameParser.parse("第10节：怎么识记和运用声母z c s.mp4")
+        assertEquals(10, parsed.episode)
+        assertTrue(parsed.explicitEpisode)
+    }
+
     private fun video(path: String): ScannedFile {
         val name = path.substringAfterLast('/')
         return ScannedFile(

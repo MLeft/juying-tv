@@ -80,6 +80,9 @@ fun HomeScreen(
     val filteredContinue = continueItems.filter { visibleById.containsKey(it.seriesId) }
 
     val featured = filteredContinue.firstOrNull()?.let { visibleById[it.seriesId] }
+        ?: visible.filter { it.kind == SeriesKind.SERIES && it.displayTitle.any { c -> c.isLetter() } }
+            .maxByOrNull { it.createdAt }
+        ?: visible.filter { it.displayTitle.any { c -> c.isLetter() } }.maxByOrNull { it.createdAt }
         ?: visible.maxByOrNull { it.createdAt }
     val featuredContinue = featured?.let { series ->
         filteredContinue.firstOrNull { it.seriesId == series.id }
@@ -308,7 +311,11 @@ private fun HeroBanner(
             Text(
                 series.displayTitle,
                 color = JuyingColors.TextPrimary,
-                style = MaterialTheme.typography.displayMedium,
+                style = if (series.displayTitle.length > 18) {
+                    MaterialTheme.typography.headlineLarge
+                } else {
+                    MaterialTheme.typography.displayMedium
+                },
                 fontWeight = FontWeight.Bold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis

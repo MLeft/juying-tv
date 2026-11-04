@@ -289,7 +289,7 @@ fun GradientArtwork(
     showTitle: Boolean = true
 ) {
     val title = series.displayTitle
-    val seed = title.hashCode().absoluteValue
+    val seed = (series.id.hashCode() * 31 + title.hashCode()).absoluteValue
     val palette = remember(seed) {
         val palettes = listOf(
             listOf(Color(0xFF1C2B4A), Color(0xFF0E1726), Color(0xFF31456B)),
