@@ -23,6 +23,7 @@ import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.Visibility
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,8 +54,10 @@ import androidx.tv.foundation.lazy.list.items as listItems
 import androidx.tv.foundation.lazy.list.rememberTvLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.CollectionEntity
+import com.juying.tv.data.db.MediaPathRow
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.ui.components.Badge
+import com.juying.tv.ui.components.CheckMark
 import com.juying.tv.ui.components.ConfirmDialog
 import com.juying.tv.ui.components.EmptyState
 import com.juying.tv.ui.components.FocusableSurface
@@ -381,14 +384,42 @@ fun CollectionPickerScreen(
     val collections by viewModel.collections.collectAsStateWithLifecycle()
     val items by viewModel.collectionItemsFlow(collectionId).collectAsStateWithLifecycle(emptyList())
     val allSeries by viewModel.series.collectAsStateWithLifecycle()
+    val sources by viewModel.sources.collectAsStateWithLifecycle()
+    val mediaPaths by viewModel.mediaPaths.collectAsStateWithLifecycle()
     val collection = collections.firstOrNull { it.id == collectionId }
     val selectedIds = remember(items) { items.map { it.seriesId }.toSet() }
-    val firstFocus = remember { FocusRequester() }
-    RegisterScreenFocus(firstFocus)
+    val sourcesWithMedia = remember(sources, mediaPaths) {
+        sources.filter { source -> mediaPaths.any { it.sourceId == source.id } }
+    }
 
-    LaunchedEffect(Unit) {
-        delay(180)
-        runCatching { firstFocus.requestFocus() }
+    var mode by remember { mutableStateOf(PickerMode.DIRECTORY) }
+    var selectedSourceId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(sourcesWithMedia) {
+        if (selectedSourceId == null || sourcesWithMedia.none { it.id == selectedSourceId }) {
+            selectedSourceId = sourcesWithMedia.firstOrNull()?.id
+        }
+    }
+
+    val folderIndex = remember(mediaPaths, selectedSourceId) {
+        buildFolderIndex(mediaPaths, selectedSourceId)
+    }
+    var currentPath by remember(selectedSourceId) { mutableStateOf("/") }
+    LaunchedEffect(selectedSourceId, folderIndex.initialPath) {
+        if (currentPath == "/" || currentPath !in folderIndex.folders) {
+            currentPath = folderIndex.initialPath
+        }
+    }
+    val doneFocus = remember { FocusRequester() }
+    val folderFocus = remember { FocusRequester() }
+    RegisterScreenFocus(doneFocus)
+
+    LaunchedEffect(mode, currentPath, folderIndex) {
+        delay(150)
+        if (mode == PickerMode.DIRECTORY) {
+            runCatching { folderFocus.requestFocus() }
+        } else {
+            runCatching { doneFocus.requestFocus() }
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 20.dp)) {
@@ -401,40 +432,291 @@ fun CollectionPickerScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "点击海报即可加入或移出，已完成 ${selectedIds.size} 部",
+                    if (mode == PickerMode.DIRECTORY) {
+                        "按媒体源的原始目录批量加入，合集仍以剧集卡片展示；已选 ${selectedIds.size} 部"
+                    } else {
+                        "点击海报加入或移出，已选 ${selectedIds.size} 部"
+                    },
                     color = JuyingColors.TextSecondary,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
-            TvButton("完成", onDone, focusRequester = firstFocus)
+            TvChip("按原始目录", selected = mode == PickerMode.DIRECTORY, onClick = { mode = PickerMode.DIRECTORY })
+            Spacer(Modifier.width(8.dp))
+            TvChip("按剧集", selected = mode == PickerMode.SERIES, onClick = { mode = PickerMode.SERIES })
+            Spacer(Modifier.width(12.dp))
+            TvButton("完成", onDone, focusRequester = doneFocus)
         }
-        Spacer(Modifier.height(20.dp))
-        if (allSeries.isEmpty()) {
+        Spacer(Modifier.height(14.dp))
+
+        if (mediaPaths.isEmpty() && allSeries.isEmpty()) {
             EmptyState(
                 title = "媒体库还没有内容",
-                description = "先扫描媒体源，再把归集好的剧集加入合集。",
+                description = "先扫描媒体源，再按目录或剧集把内容加入合集。",
                 actionText = "完成",
                 action = onDone
             )
+            return@Column
+        }
+
+        if (mode == PickerMode.SERIES) {
+            if (allSeries.isEmpty()) {
+                EmptyState(
+                    title = "媒体库还没有内容",
+                    description = "先扫描媒体源，再把归集好的剧集加入合集。",
+                    actionText = "完成",
+                    action = onDone
+                )
+            } else {
+                TvLazyVerticalGrid(
+                    columns = TvGridCells.Fixed(6),
+                    state = rememberTvLazyGridState(),
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 40.dp, top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    items(allSeries, key = { it.id }) { series ->
+                        val selected = selectedIds.contains(series.id)
+                        PosterCard(
+                            series = series,
+                            onClick = {
+                                if (selected) viewModel.removeSeriesFromCollection(collectionId, series.id)
+                                else viewModel.addSeriesToCollection(collectionId, series.id)
+                            },
+                            selected = selected
+                        )
+                    }
+                }
+            }
         } else {
-            TvLazyVerticalGrid(
-                columns = TvGridCells.Fixed(6),
-                state = rememberTvLazyGridState(),
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 40.dp, top = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
-            ) {
-                items(allSeries, key = { it.id }) { series ->
-                    val selected = selectedIds.contains(series.id)
-                    PosterCard(
-                        series = series,
-                        onClick = {
-                            if (selected) viewModel.removeSeriesFromCollection(collectionId, series.id)
-                            else viewModel.addSeriesToCollection(collectionId, series.id)
-                        },
-                        selected = selected
+            DirectoryCollectionPicker(
+                sources = sourcesWithMedia,
+                selectedSourceId = selectedSourceId,
+                onSelectSource = { selectedSourceId = it },
+                folderIndex = folderIndex,
+                currentPath = currentPath,
+                onNavigate = { currentPath = it },
+                selectedSeriesIds = selectedIds,
+                onToggleFolder = { seriesIds, add ->
+                    viewModel.toggleFolderInCollection(collectionId, seriesIds, add)
+                },
+                folderFocus = folderFocus
+            )
+        }
+    }
+}
+
+private enum class PickerMode { DIRECTORY, SERIES }
+
+private data class FolderInfo(
+    val path: String,
+    val name: String,
+    val children: List<String>,
+    val seriesIds: Set<String>,
+    val videoCount: Int
+)
+
+private data class FolderIndex(
+    val folders: Map<String, FolderInfo>,
+    val initialPath: String
+)
+
+private fun buildFolderIndex(mediaPaths: List<MediaPathRow>, sourceId: String?): FolderIndex {
+    if (sourceId == null) return FolderIndex(emptyMap(), "/")
+    val rows = mediaPaths.filter { it.sourceId == sourceId }
+    if (rows.isEmpty()) return FolderIndex(emptyMap(), "/")
+    val allPaths = linkedSetOf("/")
+    val seriesByPath = HashMap<String, MutableSet<String>>()
+    val videoCountByPath = HashMap<String, Int>()
+    rows.forEach { row ->
+        var path = row.parentPath
+        while (true) {
+            allPaths += path
+            seriesByPath.getOrPut(path) { mutableSetOf() } += row.seriesId
+            videoCountByPath[path] = (videoCountByPath[path] ?: 0) + 1
+            if (path == "/") break
+            path = parentOfPath(path)
+        }
+    }
+    val childrenByParent = allPaths.filter { it != "/" }
+        .groupBy { parentOfPath(it) }
+        .mapValues { (_, children) -> children.sortedWith(compareBy { folderName(it).lowercase() }) }
+    val folders = allPaths.associateWith { path ->
+        FolderInfo(
+            path = path,
+            name = if (path == "/") "全部目录" else folderName(path),
+            children = childrenByParent[path].orEmpty(),
+            seriesIds = seriesByPath[path].orEmpty(),
+            videoCount = videoCountByPath[path] ?: 0
+        )
+    }
+    val top = childrenByParent["/"].orEmpty()
+    val initial = if (top.size == 1) top.first() else "/"
+    return FolderIndex(folders, initial)
+}
+
+private fun folderName(path: String): String = path.trim('/').substringAfterLast('/')
+
+private fun parentOfPath(path: String): String {
+    val trimmed = path.trim('/')
+    if (!trimmed.contains('/')) return "/"
+    return "/" + trimmed.substringBeforeLast('/')
+}
+
+@Composable
+private fun DirectoryCollectionPicker(
+    sources: List<com.juying.tv.data.db.SourceEntity>,
+    selectedSourceId: String?,
+    onSelectSource: (String) -> Unit,
+    folderIndex: FolderIndex,
+    currentPath: String,
+    onNavigate: (String) -> Unit,
+    selectedSeriesIds: Set<String>,
+    onToggleFolder: (Set<String>, Boolean) -> Unit,
+    folderFocus: FocusRequester
+) {
+    val current = folderIndex.folders[currentPath]
+        ?: folderIndex.folders[folderIndex.initialPath]
+        ?: return
+    val currentAllSelected = current.seriesIds.isNotEmpty() && current.seriesIds.all { it in selectedSeriesIds }
+    val currentPartial = current.seriesIds.any { it in selectedSeriesIds } && !currentAllSelected
+
+    Column(Modifier.fillMaxSize()) {
+        if (sources.size > 1) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("媒体源", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+                sources.forEach { source ->
+                    TvChip(source.name, selected = source.id == selectedSourceId, onClick = { onSelectSource(source.id) })
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(JuyingColors.Surface.copy(alpha = 0.32f))
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (currentPath != "/") {
+                TvChip("上一层", onClick = { onNavigate(parentOfPath(currentPath)) })
+                Spacer(Modifier.width(8.dp))
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    current.name,
+                    color = JuyingColors.TextPrimary,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    "${currentPath} · ${current.seriesIds.size} 部剧 / ${current.videoCount} 个视频",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (current.seriesIds.isNotEmpty()) {
+                TvChip(
+                    if (currentAllSelected) "已加入当前目录" else if (currentPartial) "补齐当前目录" else "加入当前目录",
+                    selected = currentAllSelected,
+                    onClick = { onToggleFolder(current.seriesIds, !currentAllSelected) }
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "选择目录会把该目录及子目录下的剧集批量加入合集；需要单集/单剧选择时切到“按剧集”。",
+            color = JuyingColors.TextMuted,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.height(8.dp))
+
+        TvLazyColumn(
+            state = rememberTvLazyListState(),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 30.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp)
+        ) {
+            if (current.children.isEmpty()) {
+                item {
+                    Text(
+                        "此目录没有子文件夹，可直接加入当前目录。",
+                        color = JuyingColors.TextMuted,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 20.dp)
                     )
+                }
+            }
+            listItems(current.children, key = { it }) { childPath ->
+                val child = folderIndex.folders[childPath] ?: return@listItems
+                val allSelected = child.seriesIds.isNotEmpty() && child.seriesIds.all { it in selectedSeriesIds }
+                val partial = child.seriesIds.any { it in selectedSeriesIds } && !allSelected
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (allSelected) JuyingColors.Gold.copy(alpha = 0.08f)
+                            else JuyingColors.Surface.copy(alpha = 0.32f)
+                        )
+                        .border(
+                            1.dp,
+                            if (allSelected) JuyingColors.Gold.copy(alpha = 0.4f)
+                            else JuyingColors.Outline.copy(alpha = 0.4f),
+                            RoundedCornerShape(12.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FocusableSurface(
+                        onClick = { onToggleFolder(child.seriesIds, !allSelected) },
+                        modifier = Modifier
+                            .size(34.dp)
+                            .then(
+                                if (childPath == current.children.firstOrNull()) Modifier.focusRequester(folderFocus)
+                                else Modifier
+                            ),
+                        shape = RoundedCornerShape(8.dp),
+                        focusedScale = 1.08f,
+                        backgroundColor = Color.Transparent,
+                        focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                        borderColor = Color.Transparent,
+                        focusedBorderColor = JuyingColors.Gold
+                    ) {
+                        CheckMark(allSelected, Modifier.align(Alignment.Center).size(24.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Icon(
+                        Icons.Rounded.Folder,
+                        contentDescription = null,
+                        tint = if (allSelected) JuyingColors.Gold else JuyingColors.TextSecondary,
+                        modifier = Modifier.size(19.dp)
+                    )
+                    Spacer(Modifier.width(9.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            child.name,
+                            color = JuyingColors.TextPrimary,
+                            style = MaterialTheme.typography.bodyLarge,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            buildString {
+                                append("${child.seriesIds.size} 部剧 / ${child.videoCount} 个视频")
+                                if (partial) append(" · 部分已加入")
+                                else if (allSelected) append(" · 已全部加入")
+                            },
+                            color = if (allSelected) JuyingColors.Gold else JuyingColors.TextMuted,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    TvChip("进入", onClick = { onNavigate(childPath) })
                 }
             }
         }

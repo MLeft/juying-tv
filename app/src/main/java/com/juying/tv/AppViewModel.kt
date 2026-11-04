@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.juying.tv.data.AppGraph
 import com.juying.tv.data.db.CollectionEntity
 import com.juying.tv.data.db.MediaEntity
+import com.juying.tv.data.db.MediaPathRow
 import com.juying.tv.data.db.ProgressEntity
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.data.db.SourceEntity
@@ -57,6 +58,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val hiddenSeries = repo.hiddenSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collections = repo.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collectionItems = repo.collectionItems.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val mediaPaths = repo.mediaPaths.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val kidsMode = settings.kidsMode.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val pinSet = settings.pinHash.map { it != null }
@@ -301,6 +303,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun removeSeriesFromCollection(collectionId: String, seriesId: String) {
         viewModelScope.launch { repo.removeSeriesFromCollection(collectionId, seriesId) }
+    }
+
+    fun toggleFolderInCollection(
+        collectionId: String,
+        seriesIds: Collection<String>,
+        add: Boolean
+    ) {
+        viewModelScope.launch {
+            if (add) repo.addSeriesBatchToCollection(collectionId, seriesIds)
+            else repo.removeSeriesBatchFromCollection(collectionId, seriesIds)
+        }
     }
 
     fun moveCollectionItem(collectionId: String, seriesId: String, delta: Int) {

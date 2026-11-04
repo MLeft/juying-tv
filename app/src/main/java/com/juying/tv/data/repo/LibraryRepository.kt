@@ -10,6 +10,7 @@ import com.juying.tv.data.db.CollectionEntity
 import com.juying.tv.data.db.CollectionItemEntity
 import com.juying.tv.data.db.ContinueItem
 import com.juying.tv.data.db.MediaEntity
+import com.juying.tv.data.db.MediaPathRow
 import com.juying.tv.data.db.ProgressEntity
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.data.db.SourceEntity
@@ -44,6 +45,7 @@ class LibraryRepository(
     val hiddenSeries: Flow<List<SeriesEntity>> = seriesDao.observeHidden()
     val collections: Flow<List<CollectionEntity>> = collectionDao.observeCollections()
     val collectionItems: Flow<List<CollectionItemEntity>> = collectionDao.observeAllItems()
+    val mediaPaths: Flow<List<MediaPathRow>> = mediaDao.observeMediaPaths()
 
     fun continueWatching(kidsOnly: Boolean): Flow<List<ContinueItem>> =
         progressDao.observeContinue(kidsOnly)
@@ -238,6 +240,26 @@ class LibraryRepository(
         if (items.any { it.seriesId == seriesId }) return
         val index = (collectionDao.maxItemSort(collectionId) ?: -1) + 1
         collectionDao.upsertItem(CollectionItemEntity(collectionId, seriesId, index))
+    }
+
+    suspend fun addSeriesBatchToCollection(collectionId: String, seriesIds: Collection<String>) {
+        if (seriesIds.isEmpty()) return
+        database.withTransaction {
+            val existing = collectionDao.getItems(collectionId).map { it.seriesId }.toSet()
+            var index = (collectionDao.maxItemSort(collectionId) ?: -1)
+            val additions = seriesIds.filter { it !in existing }.map { id ->
+                index += 1
+                CollectionItemEntity(collectionId, id, index)
+            }
+            if (additions.isNotEmpty()) collectionDao.upsertItems(additions)
+        }
+    }
+
+    suspend fun removeSeriesBatchFromCollection(collectionId: String, seriesIds: Collection<String>) {
+        if (seriesIds.isEmpty()) return
+        database.withTransaction {
+            seriesIds.forEach { collectionDao.removeItem(collectionId, it) }
+        }
     }
 
     suspend fun removeSeriesFromCollection(collectionId: String, seriesId: String) =
