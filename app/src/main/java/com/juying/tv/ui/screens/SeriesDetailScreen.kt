@@ -38,9 +38,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -51,7 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.items
+import androidx.tv.foundation.lazy.grid.itemsIndexed
 import androidx.tv.foundation.lazy.list.TvLazyRow
 import androidx.tv.foundation.lazy.list.items as listItems
 import androidx.tv.foundation.lazy.list.rememberTvLazyListState
@@ -79,6 +81,7 @@ import com.juying.tv.util.formatEpisode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SeriesDetailScreen(
     viewModel: AppViewModel,
@@ -98,6 +101,9 @@ fun SeriesDetailScreen(
     var selectedSeason by remember(seriesId) { mutableStateOf<Int?>(null) }
     var memberships by remember { mutableStateOf<Set<String>>(emptySet()) }
     val playFocus = remember { FocusRequester() }
+    val backFocus = remember { FocusRequester() }
+    val chipsFocus = remember { FocusRequester() }
+    val firstEpisodeFocus = remember { FocusRequester() }
     RegisterScreenFocus(playFocus)
 
     val progressById = remember(progress) { progress.associateBy { it.mediaId } }
@@ -111,6 +117,9 @@ fun SeriesDetailScreen(
     val seasons = remember(media) { media.map { it.season }.distinct().sorted() }
     val multiSeason = seasons.size > 1
     val seasonCount = seasons.size
+    // 电视端遥控器上下键只在内容区内移动，不要跳到左侧导航栏。
+    val belowPlay = if (multiSeason) chipsFocus else firstEpisodeFocus
+    val firstRowUp = if (multiSeason) chipsFocus else playFocus
     val visibleMedia = remember(media, selectedSeason) {
         if (selectedSeason == null) media else media.filter { it.season == selectedSeason }
     }
@@ -143,12 +152,29 @@ fun SeriesDetailScreen(
 
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TvChip("返回", onClick = onBack, icon = Icons.Rounded.ArrowBack)
+            TvChip(
+                "返回",
+                onClick = onBack,
+                icon = Icons.Rounded.ArrowBack,
+                focusRequester = backFocus,
+                modifier = Modifier.focusProperties {
+                    up = FocusRequester.Cancel
+                    down = playFocus
+                }
+            )
             Spacer(Modifier.width(12.dp))
             if (sourceName != null) Badge(sourceName, JuyingColors.Blue)
             Spacer(Modifier.weight(1f))
             if (!kidsMode) {
-                TvChip("编辑信息", onClick = { showEdit = true }, icon = Icons.Rounded.Edit)
+                TvChip(
+                    "编辑信息",
+                    onClick = { showEdit = true },
+                    icon = Icons.Rounded.Edit,
+                    modifier = Modifier.focusProperties {
+                        up = FocusRequester.Cancel
+                        down = playFocus
+                    }
+                )
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -221,13 +247,21 @@ fun SeriesDetailScreen(
                         onClick = { target?.let { onPlay(it.id, seriesId, false) } },
                         icon = Icons.Rounded.PlayArrow,
                         focusRequester = playFocus,
-                        enabled = target != null
+                        enabled = target != null,
+                        modifier = Modifier.focusProperties {
+                            up = backFocus
+                            down = belowPlay
+                        }
                     )
                     if (resume != null && current.kind != SeriesKind.MOVIE) {
                         TvButton(
                             "从头播放",
                             { media.firstOrNull()?.let { onPlay(it.id, seriesId, true) } },
-                            primary = false
+                            primary = false,
+                            modifier = Modifier.focusProperties {
+                                up = backFocus
+                                down = belowPlay
+                            }
                         )
                     }
                 }
@@ -262,7 +296,11 @@ fun SeriesDetailScreen(
                 TvChip(
                     "上次看到：${episodeDisplay(resume, multiSeason)}",
                     selected = true,
-                    onClick = { onPlay(resume.id, seriesId, false) }
+                    onClick = { onPlay(resume.id, seriesId, false) },
+                    modifier = Modifier.focusProperties {
+                        up = playFocus
+                        down = belowPlay
+                    }
                 )
             }
         }
@@ -276,14 +314,23 @@ fun SeriesDetailScreen(
                     TvChip(
                         "全部季",
                         selected = selectedSeason == null,
-                        onClick = { selectedSeason = null }
+                        onClick = { selectedSeason = null },
+                        focusRequester = chipsFocus,
+                        modifier = Modifier.focusProperties {
+                            up = playFocus
+                            down = firstEpisodeFocus
+                        }
                     )
                 }
                 listItems(seasons, key = { it }) { season ->
                     TvChip(
                         "S${season.toString().padStart(2, '0')}",
                         selected = selectedSeason == season,
-                        onClick = { selectedSeason = season }
+                        onClick = { selectedSeason = season },
+                        modifier = Modifier.focusProperties {
+                            up = playFocus
+                            down = firstEpisodeFocus
+                        }
                     )
                 }
             }
@@ -306,7 +353,7 @@ fun SeriesDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(visibleMedia, key = { it.id }) { item ->
+                itemsIndexed(visibleMedia, key = { _, it -> it.id }) { index, item ->
                     val p = progressById[item.id]
                     val fraction = p?.let {
                         if (it.durationMs > 0) (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) else 0f
@@ -317,7 +364,14 @@ fun SeriesDetailScreen(
                         progress = fraction,
                         isCurrent = item.id == resume?.id,
                         multiSeason = multiSeason,
-                        onClick = { onPlay(item.id, seriesId, false) }
+                        onClick = { onPlay(item.id, seriesId, false) },
+                        modifier = when {
+                            index == 0 -> Modifier
+                                .focusRequester(firstEpisodeFocus)
+                                .focusProperties { up = firstRowUp }
+                            index < 3 -> Modifier.focusProperties { up = firstRowUp }
+                            else -> Modifier
+                        }
                     )
                 }
             }
@@ -354,11 +408,12 @@ private fun EpisodeRow(
     progress: Float,
     isCurrent: Boolean,
     multiSeason: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     FocusableSurface(
         onClick = onClick,
-        modifier = Modifier.fillMaxWidth().height(62.dp),
+        modifier = modifier.fillMaxWidth().height(62.dp),
         shape = RoundedCornerShape(13.dp),
         focusedScale = 1.02f,
         backgroundColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.08f) else JuyingColors.Surface.copy(alpha = 0.34f),

@@ -29,11 +29,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
@@ -159,6 +160,7 @@ private fun NavRailItem(
         selected -> JuyingColors.Gold
         else -> JuyingColors.TextSecondary
     }
+    val focusManager = LocalFocusManager.current
     FocusableSurface(
         onClick = onClick,
         modifier = Modifier
@@ -168,22 +170,23 @@ private fun NavRailItem(
                 if (event.type == KeyEventType.KeyDown &&
                     event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
                 ) {
-                    val target = contentEntry
-                    if (target != null) {
-                        runCatching { target.requestFocus() }
+                    // 优先交给 Compose 做几何搜索：即使页面入口项已滚出屏幕、不再是组合状态，
+                    // 也能落到当前可见的内容项上，避免按键被吞掉后焦点卡在导航栏。
+                    val moved = focusManager.moveFocus(FocusDirection.Right)
+                    if (moved) {
                         true
                     } else {
-                        false
+                        val target = contentEntry
+                        if (target != null) {
+                            runCatching { target.requestFocus() }.isSuccess
+                        } else {
+                            false
+                        }
                     }
                 } else {
                     false
                 }
-            }
-            .then(
-                if (contentEntry != null) {
-                    Modifier.focusProperties { right = contentEntry }
-                } else Modifier
-            ),
+            },
         shape = RoundedCornerShape(16.dp),
         focusedScale = 1.05f,
         backgroundColor = if (selected) JuyingColors.Surface.copy(alpha = 0.7f) else Color.Transparent,

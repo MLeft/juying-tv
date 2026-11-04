@@ -39,8 +39,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -60,6 +62,7 @@ import com.juying.tv.ui.theme.JuyingColors
 import com.juying.tv.util.localIpv4Address
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SettingsScreen(
     viewModel: AppViewModel,
@@ -118,6 +121,9 @@ fun SettingsScreen(
                 subtitle = if (pinSet) "进入儿童模式、修改允许内容时需要输入密码" else "建议先设置 4–6 位数字密码，防止孩子退出儿童模式",
                 icon = Icons.Rounded.Lock,
                 focusRequester = firstFocus,
+                modifier = Modifier.focusProperties {
+                    up = FocusRequester.Cancel
+                },
                 onClick = {
                     if (pinSet) showVerifyForChange = true else showSetPin = true
                 },
@@ -260,6 +266,9 @@ fun SettingsScreen(
                 title = "按年份自动建合集",
                 subtitle = "刮削匹配后，按首播年份建立“2024 年”等合集",
                 icon = Icons.Rounded.AutoAwesome,
+                modifier = Modifier.focusProperties {
+                    down = FocusRequester.Cancel
+                },
                 onClick = { viewModel.setScrapeYearCollections(!yearCollections) },
                 trailing = { TogglePill(yearCollections) }
             )
