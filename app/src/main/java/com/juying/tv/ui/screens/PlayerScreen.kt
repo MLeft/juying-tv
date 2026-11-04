@@ -757,10 +757,11 @@ private fun PlayerControlsOverlay(
 ) {
     val series = bundle?.series
     val episode = bundle?.episodes?.getOrNull(currentIndex)
+    val multiSeason = bundle?.episodes.orEmpty().map { it.season }.distinct().size > 1
     val episodeLabel = when {
         series == null || episode == null -> ""
         series.kind == SeriesKind.MOVIE -> "电影"
-        else -> formatEpisode(episode.season, episode.episode, false)
+        else -> episodeLabel(episode, false, multiSeason)
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -953,6 +954,7 @@ private fun EpisodePanel(
     onClose: () -> Unit
 ) {
     val episodes = bundle?.episodes.orEmpty()
+    val multiSeason = episodes.map { it.season }.distinct().size > 1
     val firstFocus = remember { FocusRequester() }
     val state = rememberTvLazyListState(
         initialFirstVisibleItemIndex = (currentIndex - 2).coerceAtLeast(0)
@@ -1021,7 +1023,7 @@ private fun EpisodePanel(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                episodeLabel(item, bundle?.series?.kind == SeriesKind.MOVIE),
+                                episodeLabel(item, bundle?.series?.kind == SeriesKind.MOVIE, multiSeason),
                                 color = if (current) JuyingColors.Gold else JuyingColors.TextSecondary,
                                 style = MaterialTheme.typography.labelLarge,
                                 modifier = Modifier.width(72.dp)
@@ -1050,8 +1052,13 @@ private fun EpisodePanel(
     }
 }
 
-private fun episodeLabel(media: MediaEntity, movie: Boolean): String =
-    if (movie) "电影" else if (media.season > 1) "S${media.season}E${media.episode}" else "第 ${media.episode} 集"
+private fun episodeLabel(media: MediaEntity, movie: Boolean, multiSeason: Boolean = false): String =
+    when {
+        movie -> "电影"
+        multiSeason -> "S${media.season.toString().padStart(2, '0')}E${media.episode.toString().padStart(2, '0')}"
+        media.season > 1 -> "S${media.season}E${media.episode}"
+        else -> "第 ${media.episode} 集"
+    }
 
 @Composable
 private fun PlayerMenu(

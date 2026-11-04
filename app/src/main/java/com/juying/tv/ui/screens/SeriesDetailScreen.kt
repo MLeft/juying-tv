@@ -52,6 +52,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
 import androidx.tv.foundation.lazy.grid.items
+import androidx.tv.foundation.lazy.list.TvLazyRow
+import androidx.tv.foundation.lazy.list.items as listItems
+import androidx.tv.foundation.lazy.list.rememberTvLazyListState
 import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.CollectionEntity
@@ -92,6 +95,7 @@ fun SeriesDetailScreen(
     val scope = rememberCoroutineScope()
 
     var showEdit by remember { mutableStateOf(false) }
+    var selectedSeason by remember(seriesId) { mutableStateOf<Int?>(null) }
     var memberships by remember { mutableStateOf<Set<String>>(emptySet()) }
     val playFocus = remember { FocusRequester() }
     RegisterScreenFocus(playFocus)
@@ -104,6 +108,15 @@ fun SeriesDetailScreen(
         }.maxByOrNull { progressById[it.id]?.updatedAt ?: 0L }
     }
     val target = resume ?: media.firstOrNull()
+    val seasons = remember(media) { media.map { it.season }.distinct().sorted() }
+    val multiSeason = seasons.size > 1
+    val seasonCount = seasons.size
+    val visibleMedia = remember(media, selectedSeason) {
+        if (selectedSeason == null) media else media.filter { it.season == selectedSeason }
+    }
+    LaunchedEffect(seasons) {
+        if (selectedSeason != null && selectedSeason !in seasons) selectedSeason = null
+    }
     val sourceName = remember(sources, series) {
         sources.firstOrNull { it.id == series?.sourceId }?.name
     }
@@ -193,7 +206,7 @@ fun SeriesDetailScreen(
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "${media.size} 个可播放视频 · 自动归集",
+                    if (multiSeason) "$seasonCount 季 · ${media.size} 个可播放视频" else "${media.size} 个可播放视频 · 自动归集",
                     color = JuyingColors.TextSecondary,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -202,7 +215,7 @@ fun SeriesDetailScreen(
                     TvButton(
                         text = when {
                             target == null -> "暂无可播放内容"
-                            resume != null -> "继续 ${formatEpisode(target.season, target.episode, current.kind == SeriesKind.MOVIE)}"
+                            resume != null -> "继续 ${episodeDisplay(target, multiSeason)}"
                             else -> if (current.kind == SeriesKind.MOVIE) "播放电影" else "从第一集开始"
                         },
                         onClick = { target?.let { onPlay(it.id, seriesId, false) } },
@@ -229,14 +242,40 @@ fun SeriesDetailScreen(
                 style = MaterialTheme.typography.titleLarge
             )
             Spacer(Modifier.width(10.dp))
-            Text("${media.size} 集", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+            Text(
+                if (selectedSeason != null) "${visibleMedia.size} 集" else "${media.size} 集",
+                color = JuyingColors.TextMuted,
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(Modifier.weight(1f))
             if (media.isNotEmpty() && resume != null) {
                 TvChip(
-                    "上次看到：${formatEpisode(resume.season, resume.episode, current.kind == SeriesKind.MOVIE)}",
+                    "上次看到：${episodeDisplay(resume, multiSeason)}",
                     selected = true,
                     onClick = { onPlay(resume.id, seriesId, false) }
                 )
+            }
+        }
+        if (seasons.size > 1) {
+            Spacer(Modifier.height(8.dp))
+            TvLazyRow(
+                state = rememberTvLazyListState(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                item(key = "all") {
+                    TvChip(
+                        "全部季",
+                        selected = selectedSeason == null,
+                        onClick = { selectedSeason = null }
+                    )
+                }
+                listItems(seasons, key = { it }) { season ->
+                    TvChip(
+                        "S${season.toString().padStart(2, '0')}",
+                        selected = selectedSeason == season,
+                        onClick = { selectedSeason = season }
+                    )
+                }
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -257,7 +296,7 @@ fun SeriesDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(media, key = { it.id }) { item ->
+                items(visibleMedia, key = { it.id }) { item ->
                     val p = progressById[item.id]
                     val fraction = p?.let {
                         if (it.durationMs > 0) (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) else 0f
@@ -267,6 +306,7 @@ fun SeriesDetailScreen(
                         media = item,
                         progress = fraction,
                         isCurrent = item.id == resume?.id,
+                        multiSeason = multiSeason,
                         onClick = { onPlay(item.id, seriesId, false) }
                     )
                 }
@@ -303,6 +343,7 @@ private fun EpisodeRow(
     media: MediaEntity,
     progress: Float,
     isCurrent: Boolean,
+    multiSeason: Boolean,
     onClick: () -> Unit
 ) {
     FocusableSurface(
@@ -332,7 +373,7 @@ private fun EpisodeRow(
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (series.kind == SeriesKind.MOVIE) series.displayTitle else "第 ${media.episode} 集",
+                    if (series.kind == SeriesKind.MOVIE) series.displayTitle else episodeDisplay(media, multiSeason),
                     color = JuyingColors.TextPrimary,
                     style = MaterialTheme.typography.titleMedium,
                     maxLines = 1,
@@ -359,6 +400,13 @@ private fun EpisodeRow(
         }
     }
 }
+
+private fun episodeDisplay(media: MediaEntity, multiSeason: Boolean): String =
+    if (multiSeason) {
+        "S${media.season.toString().padStart(2, '0')}E${media.episode.toString().padStart(2, '0')}"
+    } else {
+        formatEpisode(media.season, media.episode, false)
+    }
 
 @Composable
 private fun SeriesEditDialog(

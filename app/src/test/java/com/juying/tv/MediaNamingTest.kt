@@ -184,6 +184,22 @@ class MediaNamingTest {
         assertTrue(parsed.explicitEpisode)
     }
 
+
+    @Test
+    fun groupsCourseLevelsAsSeasons() {
+        val groups = MediaGrouper.group(
+            listOf(
+                video("/课程/完整版/01.第一级/001.mp4"),
+                video("/课程/完整版/02.第二级/001.mp4"),
+                video("/课程/完整版/02.第二级/002.mp4")
+            )
+        )
+        assertEquals(1, groups.size)
+        assertEquals(SeriesKind.SERIES, groups.first().kind)
+        assertEquals(3, groups.first().files.size)
+        assertEquals(listOf(1, 2, 2), groups.first().files.map { it.parsed.season })
+    }
+
     private fun video(path: String): ScannedFile {
         val name = path.substringAfterLast('/')
         return ScannedFile(

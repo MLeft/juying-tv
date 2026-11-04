@@ -241,6 +241,7 @@ private fun KidsSeriesPane(
 ) {
     val media by viewModel.allMediaFlow(series.id).collectAsStateWithLifecycle(emptyList())
     val allowedCount = media.count { it.kidsAllowed }
+    val multiSeason = media.map { it.season }.distinct().size > 1
     Column(
         modifier
             .fillMaxSize()
@@ -278,6 +279,7 @@ private fun KidsSeriesPane(
             items(media, key = { it.id }) { item ->
                 EpisodeToggleRow(
                     media = item,
+                    multiSeason = multiSeason,
                     onClick = { viewModel.setEpisodeKids(item.id, !item.kidsAllowed) }
                 )
             }
@@ -296,7 +298,7 @@ private fun KidsSeriesPane(
 }
 
 @Composable
-private fun EpisodeToggleRow(media: MediaEntity, onClick: () -> Unit) {
+private fun EpisodeToggleRow(media: MediaEntity, multiSeason: Boolean, onClick: () -> Unit) {
     FocusableSurface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp),
@@ -310,7 +312,11 @@ private fun EpisodeToggleRow(media: MediaEntity, onClick: () -> Unit) {
             CheckMark(media.kidsAllowed)
             Spacer(Modifier.width(10.dp))
             Text(
-                if (media.season > 1) "S${media.season}E${media.episode}" else "第 ${media.episode} 集",
+                if (multiSeason) {
+                    "S${media.season.toString().padStart(2, '0')}E${media.episode.toString().padStart(2, '0')}"
+                } else {
+                    "第 ${media.episode} 集"
+                },
                 color = JuyingColors.TextPrimary,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.width(80.dp)
