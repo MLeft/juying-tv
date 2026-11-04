@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -50,10 +51,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -471,6 +477,7 @@ fun AddSourceScreen(
     var selectedRoots by remember(sourceId) { mutableStateOf<List<QuarkRoot>>(emptyList()) }
     var showPhone by remember { mutableStateOf(false) }
     var showQuarkPicker by remember { mutableStateOf(false) }
+    var showCookieEditor by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     val scope = rememberCoroutineScope()
@@ -559,7 +566,6 @@ fun AddSourceScreen(
     Column(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 32.dp, vertical = 20.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -582,8 +588,13 @@ fun AddSourceScreen(
             }
             TvChip("返回", onClick = onBack, icon = Icons.Rounded.ArrowBack)
         }
-        Spacer(Modifier.height(16.dp))
-
+        Spacer(Modifier.height(12.dp))
+        Column(
+            Modifier
+                .weight(1f)
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+        ) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -669,17 +680,48 @@ fun AddSourceScreen(
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri
                     )
                 } else {
-                    TvTextField(
-                        value = cookie,
-                        onValueChange = { cookie = it },
-                        label = "夸克 Cookie",
-                        placeholder = "粘贴完整的 Cookie 字符串；建议用手机扫码填写",
-                        singleLine = false,
-                        minLines = 2
-                    )
-                    QuarkCookieHelp()
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(JuyingColors.BackgroundAlt)
+                            .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
+                            .padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Rounded.QrCode2,
+                            contentDescription = null,
+                            tint = JuyingColors.Gold,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "夸克 Cookie",
+                                color = JuyingColors.TextSecondary,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                if (cookie.isBlank()) {
+                                    "未填写 · 推荐用扫码在手机上粘贴"
+                                } else {
+                                    "已填写 · ${cookie.length} 个字符"
+                                },
+                                color = if (cookie.isBlank()) JuyingColors.TextMuted else JuyingColors.Green,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                        if (cookie.isNotBlank()) {
+                            TvChip("清除", onClick = { cookie = "" })
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        TvChip("手动编辑", onClick = { showCookieEditor = true })
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "建议点击上方「扫描范围」浏览网盘并多选具体动画/影视文件夹，只扫描选中目录，避免整个网盘文件过多。",
+                        "Cookie 内容已隐藏，只保存在本机。点击上方「扫描范围」可浏览网盘并多选目录，避免整个网盘文件过多。",
                         color = JuyingColors.Gold,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -739,15 +781,10 @@ fun AddSourceScreen(
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        }
+        Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             TvButton("保存并扫描", { save() })
-            TvButton(
-                "用手机填写",
-                { showPhone = true },
-                primary = false,
-                icon = Icons.Rounded.QrCode2
-            )
             if (!isWebDav) {
                 TvButton(
                     "选择扫描目录",
@@ -826,6 +863,17 @@ fun AddSourceScreen(
         )
     }
 
+    if (showCookieEditor) {
+        CookieEditorDialog(
+            initial = cookie,
+            onDismiss = { showCookieEditor = false },
+            onSave = {
+                cookie = it
+                showCookieEditor = false
+            }
+        )
+    }
+
     if (showQuarkPicker) {
         QuarkFolderPickerDialog(
             config = buildQuark(),
@@ -844,23 +892,71 @@ fun AddSourceScreen(
     }
 }
 
+
+
+
 @Composable
-private fun QuarkCookieHelp() {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(JuyingColors.Surface.copy(alpha = 0.3f))
-            .padding(16.dp)
-    ) {
-        Text("如何获取夸克 Cookie", color = JuyingColors.Gold, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(6.dp))
-        Text(
-            "在电脑上打开 pan.quark.cn 并登录 → 按 F12 打开开发者工具 → 切换到 Network（网络） → 刷新页面 → 点击任意请求 → 复制 Request Headers 中的 Cookie 整行内容。\n\n" +
-                "更推荐点击右侧「用手机填写」，在手机上粘贴后直接发送到电视。",
-            color = JuyingColors.TextSecondary,
-            style = MaterialTheme.typography.bodySmall,
-            lineHeight = 21.sp
+private fun CookieEditorDialog(
+    initial: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    var textValue by remember {
+        androidx.compose.runtime.mutableStateOf(
+            TextFieldValue(initial, selection = TextRange(initial.length))
         )
+    }
+    val fieldFocus = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(150)
+        runCatching { fieldFocus.requestFocus() }
+    }
+
+    TvDialog(onDismiss = onDismiss, modifier = Modifier.width(760.dp)) {
+        com.juying.tv.ui.components.DialogTitle(
+            "编辑夸克 Cookie",
+            "Cookie 只在电视本机保存；推荐优先使用手机扫码填写"
+        )
+        Spacer(Modifier.height(14.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(JuyingColors.BackgroundAlt)
+                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
+                .padding(12.dp)
+        ) {
+            if (textValue.text.isEmpty()) {
+                Text(
+                    "粘贴完整的 Cookie…",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+            BasicTextField(
+                value = textValue,
+                onValueChange = { textValue = it },
+                textStyle = MaterialTheme.typography.bodySmall.copy(color = JuyingColors.TextPrimary),
+                cursorBrush = SolidColor(JuyingColors.Gold),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .onFocusChanged { if (it.isFocused) keyboard?.show() }
+                    .focusRequester(fieldFocus)
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "已输入 ${textValue.text.length} 个字符。文本框可在内部滚动，不再撑高页面。",
+            color = JuyingColors.TextMuted,
+            style = MaterialTheme.typography.bodySmall
+        )
+        Spacer(Modifier.height(20.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
+            TvButton("取消", onDismiss, primary = false)
+            TvButton("保存 Cookie", { onSave(textValue.text.trim()) })
+        }
     }
 }
