@@ -1,6 +1,7 @@
 package com.juying.tv.data.source.quark
 
 import com.juying.tv.data.source.QuarkConfig
+import com.juying.tv.data.source.QuarkRoot
 import com.juying.tv.data.source.ScannedFile
 import com.juying.tv.data.source.ScannedKind
 import com.juying.tv.data.source.ScanResult
@@ -37,15 +38,39 @@ class QuarkClient(private val client: OkHttpClient) {
     private val urlCache = ConcurrentHashMap<String, Pair<String, Long>>()
 
     suspend fun test(config: QuarkConfig): String = withContext(Dispatchers.IO) {
-        val entries = listFolder(config, config.rootFid.ifBlank { "0" })
-        "连接成功 · 根目录 ${entries.size} 项"
+        val fid = config.effectiveRoots().firstOrNull()?.fid ?: "0"
+        val entries = listFolder(config, fid)
+        "连接成功 · 当前目录 ${entries.size} 项"
     }
+
+    /** 供目录选择器使用：只返回当前层级的文件夹。 */
+    suspend fun listDirectories(config: QuarkConfig, fid: String): List<QuarkDir> =
+        withContext(Dispatchers.IO) {
+            listFolder(config, fid)
+                .filter { it.isDir && it.name.isNotBlank() && !it.name.startsWith(".") }
+                .map { QuarkDir(it.fid, it.name) }
+                .sortedWith(compareBy { it.name.lowercase() })
+        }
 
     suspend fun scan(config: QuarkConfig, onProgress: (Int, String) -> Unit): ScanResult =
         withContext(Dispatchers.IO) {
             val files = ArrayList<ScannedFile>()
-            walk(config, config.rootFid.ifBlank { "0" }, "/", files, 1, onProgress)
-            ScanResult(files, config.rootName.ifBlank { "夸克网盘" })
+            val seen = HashSet<String>()
+            val explicitRoots = config.roots.isNotEmpty()
+            val roots = config.effectiveRoots()
+            roots.forEach { root ->
+                coroutineContext.ensureActive()
+                val basePath = if (explicitRoots) {
+                    "/" + root.name.replace('/', ' ').replace('\\', ' ').trim().ifBlank { "目录" }
+                } else {
+                    "/"
+                }
+                walk(config, root.fid.ifBlank { "0" }, basePath, files, 1, onProgress, seen)
+            }
+            ScanResult(
+                files,
+                if (explicitRoots) "夸克网盘 · ${roots.size} 个目录" else config.rootName.ifBlank { "夸克网盘" }
+            )
         }
 
     fun playbackHeaders(config: QuarkConfig): Map<String, String> = mapOf(
@@ -127,18 +152,22 @@ class QuarkClient(private val client: OkHttpClient) {
         logicalPath: String,
         out: MutableList<ScannedFile>,
         depth: Int,
-        onProgress: (Int, String) -> Unit
+        onProgress: (Int, String) -> Unit,
+        seen: MutableSet<String>
     ) {
         coroutineContext.ensureActive()
-        if (depth > 8) return
+        if (depth > 10) return
         val entries = listFolder(config, fid)
         for (entry in entries) {
             coroutineContext.ensureActive()
-            if (out.size >= 8000) throw IOException("夸克目录文件过多，请指定更具体的根目录 fid")
+            if (out.size >= 20000) {
+                throw IOException("所选夸克目录下文件超过 20000 个，请在编辑媒体源时少选几个目录，或选择更具体的文件夹")
+            }
             if (entry.name.isBlank() || entry.name.startsWith(".")) continue
+            if (!seen.add(entry.fid)) continue
             val path = if (logicalPath == "/") "/${entry.name}" else "$logicalPath/${entry.name}"
             if (entry.isDir) {
-                walk(config, entry.fid, path, out, depth + 1, onProgress)
+                walk(config, entry.fid, path, out, depth + 1, onProgress, seen)
             } else {
                 val kind = classify(entry.name)
                 if (kind == ScannedKind.VIDEO || kind == ScannedKind.SUBTITLE) {
@@ -242,6 +271,11 @@ class QuarkClient(private val client: OkHttpClient) {
         if (value.startsWith("Cookie:", ignoreCase = true)) value = value.substringAfter(':').trim()
         return value
     }
+
+    data class QuarkDir(
+        val fid: String,
+        val name: String
+    )
 
     private data class QuarkEntry(
         val fid: String,

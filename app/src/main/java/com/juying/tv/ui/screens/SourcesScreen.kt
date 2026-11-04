@@ -66,6 +66,7 @@ import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.SourceEntity
 import com.juying.tv.data.db.SourceType
 import com.juying.tv.data.source.QuarkConfig
+import com.juying.tv.data.source.QuarkRoot
 import com.juying.tv.data.source.SourceConfigs
 import com.juying.tv.data.source.WebDavConfig
 import com.juying.tv.ui.components.Badge
@@ -467,8 +468,9 @@ fun AddSourceScreen(
     var password by remember(sourceId) { mutableStateOf("") }
     var rootPath by remember(sourceId) { mutableStateOf("") }
     var cookie by remember(sourceId) { mutableStateOf("") }
-    var rootFid by remember(sourceId) { mutableStateOf("0") }
+    var selectedRoots by remember(sourceId) { mutableStateOf<List<QuarkRoot>>(emptyList()) }
     var showPhone by remember { mutableStateOf(false) }
+    var showQuarkPicker by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     val scope = rememberCoroutineScope()
@@ -488,7 +490,13 @@ fun AddSourceScreen(
                 } else {
                     val config = SourceConfigs.decodeQuark(existing.config)
                     cookie = config.cookie
-                    rootFid = config.rootFid
+                    selectedRoots = if (config.roots.isNotEmpty()) {
+                        config.roots
+                    } else if (config.rootFid != "0") {
+                        listOf(QuarkRoot(config.rootFid, config.rootName.ifBlank { "根目录" }))
+                    } else {
+                        emptyList()
+                    }
                 }
             }
             initialized = true
@@ -498,7 +506,30 @@ fun AddSourceScreen(
     }
 
     fun buildWebDav() = WebDavConfig(url.trim(), username.trim(), password, rootPath.trim())
-    fun buildQuark() = QuarkConfig(cookie.trim(), rootFid.trim().ifBlank { "0" }, "夸克网盘")
+
+    fun buildQuark(): QuarkConfig {
+        val first = selectedRoots.firstOrNull()
+        return QuarkConfig(
+            cookie = cookie.trim(),
+            rootFid = first?.fid ?: "0",
+            rootName = first?.name ?: "夸克网盘",
+            roots = selectedRoots
+        )
+    }
+
+    fun openQuarkPicker() {
+        if (cookie.isBlank()) {
+            testResult = false to "请先填写或扫码填入夸克 Cookie，再浏览网盘目录"
+            return
+        }
+        showQuarkPicker = true
+    }
+
+    val scopeSummary = when {
+        selectedRoots.isEmpty() -> "整个网盘（建议选择具体文件夹）"
+        selectedRoots.size <= 2 -> selectedRoots.joinToString("、") { it.name }
+        else -> selectedRoots.take(2).joinToString("、") { it.name } + " 等 ${selectedRoots.size} 个目录"
+    }
 
     fun validate(): String? {
         if (isWebDav) {
@@ -574,13 +605,42 @@ fun AddSourceScreen(
                             modifier = Modifier.weight(1.4f)
                         )
                     } else {
-                        TvTextField(
-                            value = rootFid,
-                            onValueChange = { rootFid = it },
-                            label = "根目录 fid（可选）",
-                            placeholder = "默认 0",
-                            modifier = Modifier.weight(1f)
-                        )
+                        FocusableSurface(
+                            onClick = { openQuarkPicker() },
+                            modifier = Modifier.weight(1f).heightIn(min = 74.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            focusedScale = 1.015f,
+                            backgroundColor = JuyingColors.BackgroundAlt,
+                            focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                            borderColor = JuyingColors.Outline,
+                            focusedBorderColor = JuyingColors.Gold
+                        ) {
+                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                                Text(
+                                    "扫描范围（可多选）",
+                                    color = JuyingColors.TextSecondary,
+                                    style = MaterialTheme.typography.labelMedium
+                                )
+                                Spacer(Modifier.height(5.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Rounded.Folder,
+                                        contentDescription = null,
+                                        tint = JuyingColors.Gold,
+                                        modifier = Modifier.size(17.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        scopeSummary,
+                                        color = JuyingColors.TextPrimary,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 if (isWebDav) {
@@ -618,6 +678,11 @@ fun AddSourceScreen(
                         minLines = 2
                     )
                     QuarkCookieHelp()
+                    Text(
+                        "建议点击上方「扫描范围」浏览网盘并多选具体动画/影视文件夹，只扫描选中目录，避免整个网盘文件过多。",
+                        color = JuyingColors.Gold,
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
             Column(Modifier.width(330.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -683,6 +748,14 @@ fun AddSourceScreen(
                 primary = false,
                 icon = Icons.Rounded.QrCode2
             )
+            if (!isWebDav) {
+                TvButton(
+                    "选择扫描目录",
+                    { openQuarkPicker() },
+                    primary = false,
+                    icon = Icons.Rounded.Folder
+                )
+            }
             TvButton(
                 if (testing) "测试中…" else "测试连接",
                 onClick = {
@@ -730,8 +803,7 @@ fun AddSourceScreen(
                     cookie,
                     multiline = true,
                     hint = "电脑浏览器登录 pan.quark.cn，F12 → 网络 → 刷新，复制任意请求的 Cookie 请求头。Cookie 等同于账号密码，请勿分享。"
-                ),
-                PhoneField("rootFid", "根目录 fid（可选）", "默认 0", rootFid)
+                )
             )
         }
         PhoneAssistDialog(
@@ -747,10 +819,26 @@ fun AddSourceScreen(
                     rootPath = values["rootPath"].orEmpty()
                 } else {
                     cookie = values["cookie"].orEmpty()
-                    rootFid = values["rootFid"].orEmpty().ifBlank { "0" }
                 }
                 showPhone = false
                 viewModel.notify("已从手机接收填写内容")
+            }
+        )
+    }
+
+    if (showQuarkPicker) {
+        QuarkFolderPickerDialog(
+            config = buildQuark(),
+            initialSelection = selectedRoots,
+            onDismiss = { showQuarkPicker = false },
+            onConfirm = { roots ->
+                selectedRoots = roots
+                showQuarkPicker = false
+                testResult = null
+                viewModel.notify(
+                    if (roots.isEmpty()) "未选择目录，将扫描整个夸克网盘"
+                    else "已选择 ${roots.size} 个扫描目录"
+                )
             }
         )
     }

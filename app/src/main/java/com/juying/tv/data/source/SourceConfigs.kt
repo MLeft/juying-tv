@@ -15,11 +15,22 @@ data class WebDavConfig(
     val rootPath: String = ""
 )
 
+data class QuarkRoot(
+    val fid: String,
+    val name: String
+)
+
 data class QuarkConfig(
     val cookie: String = "",
     val rootFid: String = "0",
-    val rootName: String = "夸克网盘"
-)
+    val rootName: String = "夸克网盘",
+    /** 用户多选的扫描范围；为空时回退到 rootFid/rootName。 */
+    val roots: List<QuarkRoot> = emptyList()
+) {
+    fun effectiveRoots(): List<QuarkRoot> =
+        if (roots.isNotEmpty()) roots
+        else listOf(QuarkRoot(rootFid.ifBlank { "0" }, rootName.ifBlank { "夸克网盘" }))
+}
 
 object SourceConfigs {
     fun encodeLocal(config: LocalConfig): String = JSONObject().put("treeUri", config.treeUri).toString()
@@ -54,18 +65,36 @@ object SourceConfigs {
         )
     }
 
-    fun encodeQuark(config: QuarkConfig): String = JSONObject()
-        .put("cookie", config.cookie)
-        .put("rootFid", config.rootFid)
-        .put("rootName", config.rootName)
-        .toString()
+    fun encodeQuark(config: QuarkConfig): String {
+        val roots = JSONArray()
+        config.roots.forEach {
+            roots.put(JSONObject().put("fid", it.fid).put("name", it.name))
+        }
+        return JSONObject()
+            .put("cookie", config.cookie)
+            .put("rootFid", config.rootFid)
+            .put("rootName", config.rootName)
+            .put("roots", roots)
+            .toString()
+    }
 
     fun decodeQuark(raw: String): QuarkConfig {
         val json = runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+        val roots = ArrayList<QuarkRoot>()
+        json.optJSONArray("roots")?.let { array ->
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+                val fid = item.optString("fid")
+                if (fid.isNotBlank()) {
+                    roots += QuarkRoot(fid, item.optString("name").ifBlank { "目录" })
+                }
+            }
+        }
         return QuarkConfig(
             cookie = json.optString("cookie"),
             rootFid = json.optString("rootFid", "0").ifBlank { "0" },
-            rootName = json.optString("rootName", "夸克网盘").ifBlank { "夸克网盘" }
+            rootName = json.optString("rootName", "夸克网盘").ifBlank { "夸克网盘" },
+            roots = roots
         )
     }
 
