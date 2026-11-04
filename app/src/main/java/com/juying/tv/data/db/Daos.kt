@@ -76,6 +76,9 @@ interface SeriesDao {
     @Query("UPDATE series SET kidsAllowed = :allow, updatedAt = :now WHERE id = :id")
     suspend fun setKidsAllowed(id: String, allow: Boolean, now: Long = System.currentTimeMillis())
 
+    @Query("DELETE FROM series WHERE id = :id")
+    suspend fun deleteById(id: String)
+
     @Query("DELETE FROM series WHERE sourceId = :sourceId AND id NOT IN (SELECT DISTINCT seriesId FROM media WHERE sourceId = :sourceId)")
     suspend fun deleteEmpty(sourceId: String)
 
@@ -141,6 +144,12 @@ interface MediaDao {
     @Query("SELECT COUNT(*) FROM media WHERE seriesId = :seriesId AND hidden = 0")
     suspend fun countVisible(seriesId: String): Int
 
+    @Query("SELECT COUNT(*) FROM media WHERE seriesId = :seriesId")
+    suspend fun countAll(seriesId: String): Int
+
+    @Query("UPDATE media SET seriesId = :toSeriesId WHERE seriesId = :fromSeriesId")
+    suspend fun reassignSeries(fromSeriesId: String, toSeriesId: String)
+
     @Query("DELETE FROM media WHERE sourceId = :sourceId AND lastSeenAt < :seenBefore")
     suspend fun deleteStale(sourceId: String, seenBefore: Long)
 
@@ -173,6 +182,9 @@ interface CollectionDao {
 
     @Query("SELECT * FROM collections WHERE id = :id")
     suspend fun find(id: String): CollectionEntity?
+
+    @Query("SELECT * FROM collections WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): CollectionEntity?
 
     @Upsert
     suspend fun upsertCollection(item: CollectionEntity)
@@ -246,4 +258,26 @@ interface ProgressDao {
 
     @Query("DELETE FROM progress WHERE mediaId NOT IN (SELECT id FROM media)")
     suspend fun deleteOrphans()
+
+    @Query("UPDATE progress SET seriesId = :toSeriesId WHERE seriesId = :fromSeriesId")
+    suspend fun reassignSeries(fromSeriesId: String, toSeriesId: String)
+}
+
+
+@Dao
+interface ScrapeMetaDao {
+    @Query("SELECT * FROM scrape_meta")
+    fun observeAll(): Flow<List<ScrapeMetaEntity>>
+
+    @Query("SELECT * FROM scrape_meta WHERE seriesId = :seriesId")
+    suspend fun find(seriesId: String): ScrapeMetaEntity?
+
+    @Query("SELECT * FROM scrape_meta WHERE provider = :provider AND externalId = :externalId")
+    suspend fun byExternal(provider: String, externalId: String): List<ScrapeMetaEntity>
+
+    @Upsert
+    suspend fun upsert(meta: ScrapeMetaEntity)
+
+    @Query("DELETE FROM scrape_meta WHERE seriesId = :seriesId")
+    suspend fun delete(seriesId: String)
 }

@@ -12,6 +12,8 @@ import com.juying.tv.data.db.ContinueItem
 import com.juying.tv.data.db.MediaEntity
 import com.juying.tv.data.db.MediaPathRow
 import com.juying.tv.data.db.ProgressEntity
+import com.juying.tv.data.db.ScrapeMetaEntity
+import com.juying.tv.data.scrape.ScrapeCandidate
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.data.db.SourceEntity
 import com.juying.tv.data.db.SourceType
@@ -25,6 +27,7 @@ import com.juying.tv.data.source.SourceScanner
 import com.juying.tv.data.source.WebDavConfig
 import com.juying.tv.util.stableId
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import java.io.IOException
 
 class LibraryRepository(
@@ -46,6 +49,7 @@ class LibraryRepository(
     val collections: Flow<List<CollectionEntity>> = collectionDao.observeCollections()
     val collectionItems: Flow<List<CollectionItemEntity>> = collectionDao.observeAllItems()
     val mediaPaths: Flow<List<MediaPathRow>> = mediaDao.observeMediaPaths()
+    val scrapeMeta: Flow<List<ScrapeMetaEntity>> = database.scrapeMetaDao().observeAll()
 
     fun continueWatching(kidsOnly: Boolean): Flow<List<ContinueItem>> =
         progressDao.observeContinue(kidsOnly)
@@ -71,6 +75,7 @@ class LibraryRepository(
         mediaDao.getBySeries(seriesId, kidsOnly)
     suspend fun getAllEpisodes(seriesId: String): List<MediaEntity> = mediaDao.allBySeries(seriesId)
     suspend fun getProgress(mediaId: String): ProgressEntity? = progressDao.find(mediaId)
+    suspend fun getAllScrapeMeta(): List<ScrapeMetaEntity> = database.scrapeMetaDao().observeAll().first()
 
     suspend fun addLocalSource(treeUri: Uri): SourceEntity {
         runCatching {
@@ -300,6 +305,93 @@ class LibraryRepository(
 
     suspend fun getCollectionsForSeries(seriesId: String): List<String> =
         collectionDao.itemsForSeries(seriesId).map { it.collectionId }
+
+    suspend fun applyScrape(series: SeriesEntity, candidate: ScrapeCandidate) {
+        database.withTransaction {
+            val updated = series.copy(
+                customTitle = series.customTitle?.takeIf { it.isNotBlank() } ?: candidate.title,
+                coverUrl = series.coverUrl?.takeIf { it.isNotBlank() } ?: candidate.posterUrl,
+                overview = series.overview?.takeIf { it.isNotBlank() } ?: candidate.overview,
+                year = series.year ?: candidate.year,
+                updatedAt = System.currentTimeMillis()
+            )
+            seriesDao.upsert(updated)
+            database.scrapeMetaDao().upsert(
+                ScrapeMetaEntity(
+                    seriesId = series.id,
+                    provider = candidate.provider,
+                    externalId = candidate.externalId,
+                    title = candidate.title,
+                    originalTitle = candidate.originalTitle,
+                    year = candidate.year,
+                    overview = candidate.overview,
+                    posterUrl = candidate.posterUrl,
+                    matchedScore = candidate.score,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+    }
+
+    suspend fun mergeScrapedDuplicates() {
+        val metas = database.scrapeMetaDao().observeAll().first()
+        val groups = metas.groupBy { it.provider to it.externalId }.filterValues { it.size > 1 }
+        if (groups.isEmpty()) return
+        database.withTransaction {
+            groups.values.forEach { group ->
+                val candidates = group.mapNotNull { meta ->
+                    seriesDao.find(meta.seriesId)?.let { series ->
+                        series to mediaDao.countAll(series.id)
+                    }
+                }
+                if (candidates.size < 2) return@forEach
+                val (primary, _) = candidates.maxWithOrNull(
+                    compareBy<Pair<SeriesEntity, Int>> { it.second }
+                        .thenByDescending { it.first.createdAt }
+                ) ?: return@forEach
+                var primaryUpdated = primary
+                candidates.filter { it.first.id != primary.id }.forEach { (duplicate, _) ->
+                    mediaDao.reassignSeries(duplicate.id, primary.id)
+                    progressDao.reassignSeries(duplicate.id, primary.id)
+                    collectionDao.itemsForSeries(duplicate.id).forEach { item ->
+                        val already = collectionDao.itemsForSeries(primary.id).any {
+                            it.collectionId == item.collectionId
+                        }
+                        if (!already) {
+                            collectionDao.upsertItem(
+                                CollectionItemEntity(item.collectionId, primary.id, item.sortIndex)
+                            )
+                        }
+                        collectionDao.removeItem(item.collectionId, duplicate.id)
+                    }
+                    if (duplicate.kidsAllowed && !primaryUpdated.kidsAllowed) {
+                        primaryUpdated = primaryUpdated.copy(kidsAllowed = true)
+                    }
+                    if (primaryUpdated.coverUrl.isNullOrBlank() && !duplicate.coverUrl.isNullOrBlank()) {
+                        primaryUpdated = primaryUpdated.copy(coverUrl = duplicate.coverUrl)
+                    }
+                    seriesDao.deleteById(duplicate.id)
+                }
+                seriesDao.upsert(primaryUpdated)
+            }
+        }
+    }
+
+    suspend fun ensureYearCollections() {
+        val metas = database.scrapeMetaDao().observeAll().first()
+        val byYear = metas.mapNotNull { meta -> meta.year?.let { it to meta.seriesId } }
+            .groupBy({ it.first }, { it.second })
+        byYear.forEach { (year, seriesIds) ->
+            val name = "$year 年"
+            val existing = collectionDao.findByName(name)
+                ?: CollectionEntity(
+                    id = stableId("collection", "scrape-year", year.toString()),
+                    name = name,
+                    sortIndex = (collectionDao.maxCollectionSort() ?: -1) + 1
+                ).also { collectionDao.upsertCollection(it) }
+            addSeriesBatchToCollection(existing.id, seriesIds.toSet())
+        }
+    }
 
     suspend fun saveProgress(mediaId: String, seriesId: String, positionMs: Long, durationMs: Long) {
         if (positionMs <= 0 || durationMs <= 0) return

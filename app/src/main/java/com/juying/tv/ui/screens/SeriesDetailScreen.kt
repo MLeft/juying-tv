@@ -234,6 +234,16 @@ fun SeriesDetailScreen(
             }
         }
 
+        if (!current.overview.isNullOrBlank()) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                current.overview.orEmpty(),
+                color = JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
         Spacer(Modifier.height(16.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(

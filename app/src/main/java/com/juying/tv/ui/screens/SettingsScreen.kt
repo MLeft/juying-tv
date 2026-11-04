@@ -2,6 +2,10 @@ package com.juying.tv.ui.screens
 
 import com.juying.tv.ui.RegisterScreenFocus
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import com.juying.tv.ui.components.TvChip
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.ChildCare
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.DeleteForever
@@ -48,6 +53,7 @@ import com.juying.tv.ui.components.Badge
 import com.juying.tv.ui.components.ConfirmDialog
 import com.juying.tv.ui.components.PinDialogBody
 import com.juying.tv.ui.components.SetPinDialog
+import com.juying.tv.ui.components.ProgressLine
 import com.juying.tv.ui.components.SettingRow
 import com.juying.tv.ui.components.TogglePill
 import com.juying.tv.ui.theme.JuyingColors
@@ -67,6 +73,10 @@ fun SettingsScreen(
     val sources by viewModel.sources.collectAsStateWithLifecycle()
     val series by viewModel.series.collectAsStateWithLifecycle()
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
+    val scrapeState by viewModel.scrapeState.collectAsStateWithLifecycle()
+    val scrapeMeta by viewModel.scrapeMeta.collectAsStateWithLifecycle()
+    val mergeDuplicates by viewModel.scrapeMergeDuplicates.collectAsStateWithLifecycle()
+    val yearCollections by viewModel.scrapeYearCollections.collectAsStateWithLifecycle()
 
     var showSetPin by remember { mutableStateOf(false) }
     var showVerifyForChange by remember { mutableStateOf(false) }
@@ -192,6 +202,84 @@ fun SettingsScreen(
                 onClick = onOpenHidden
             )
         }
+        item { SectionLabel("刮削与自动整理") }
+        scrapeState?.let { state ->
+            item {
+                ScrapeProgressCard(
+                    state = state,
+                    onCancel = { viewModel.cancelScrape() },
+                    onDismiss = { viewModel.dismissScrapeBanner() }
+                )
+            }
+        }
+        item {
+            SettingRow(
+                title = "开始刮削（豆瓣影视）",
+                subtitle = if (scrapeState?.running == true) {
+                    "正在刮削 ${scrapeState?.index}/${scrapeState?.total} · ${scrapeState?.currentTitle}"
+                } else {
+                    "电影/剧集/动画免费数据源；已匹配 ${scrapeMeta.size} 部，未匹配的保留原目录"
+                },
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = {
+                    if (scrapeState?.running == true) viewModel.notify("刮削正在进行中")
+                    else viewModel.scrapeAll(false)
+                }
+            )
+        }
+        item {
+            SettingRow(
+                title = "重新刮削全部",
+                subtitle = "忽略已匹配记录，重新请求全部 ${series.size} 部内容",
+                icon = Icons.Rounded.Refresh,
+                onClick = {
+                    if (scrapeState?.running == true) viewModel.notify("刮削正在进行中")
+                    else viewModel.scrapeAll(true)
+                }
+            )
+        }
+        item {
+            SettingRow(
+                title = "测试豆瓣连接",
+                subtitle = "只请求一次示例数据，不修改媒体库",
+                icon = Icons.Rounded.Cloud,
+                onClick = { viewModel.testScrapeConnection() }
+            )
+        }
+        item {
+            SettingRow(
+                title = "自动合并同作品重复条目",
+                subtitle = "刮削到同一条目时合并重复剧集；建议开启",
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = { viewModel.setScrapeMergeDuplicates(!mergeDuplicates) },
+                trailing = { TogglePill(mergeDuplicates) }
+            )
+        }
+        item {
+            SettingRow(
+                title = "按年份自动建合集",
+                subtitle = "刮削匹配后，按首播年份建立“2024 年”等合集",
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = { viewModel.setScrapeYearCollections(!yearCollections) },
+                trailing = { TogglePill(yearCollections) }
+            )
+        }
+        item {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(JuyingColors.Surface.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+                    .padding(18.dp)
+            ) {
+                Text(
+                    "豆瓣覆盖电影/剧集/动画，儿童课程、真人影视可能匹配不到。刮削只更新空白标题、海报、简介和年份；自动合并按豆瓣条目 ID 判断。" +
+                        "需要电视能访问 movie.douban.com；若是电影/剧集，后续可接入 TMDB。",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 20.sp
+                )
+            }
+        }
         item { SectionLabel("手机辅助填写与隐私") }
         item {
             Box(
@@ -310,6 +398,51 @@ fun SettingsScreen(
             },
             onDismiss = { showEnableKids = false }
         )
+    }
+}
+
+@Composable
+private fun ScrapeProgressCard(
+    state: com.juying.tv.ScrapeUiState,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val fraction = if (state.total > 0) state.index.toFloat() / state.total else 0f
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(JuyingColors.Surface.copy(alpha = 0.4f))
+            .border(1.dp, JuyingColors.Outline.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (state.running) "正在刮削 ${state.index}/${state.total}" else (state.message ?: "刮削结束"),
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (state.running) {
+                Text(
+                    state.currentTitle,
+                    color = JuyingColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(7.dp))
+                ProgressLine(fraction, Modifier.fillMaxWidth())
+            }
+            Text(
+                "匹配 ${state.matched} 部" + if (state.failed > 0) " · 失败 ${state.failed}" else "",
+                color = JuyingColors.TextMuted,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        if (state.running) TvChip("取消", onClick = onCancel)
+        else TvChip("关闭", onClick = onDismiss)
     }
 }
 

@@ -2,6 +2,9 @@ package com.juying.tv
 
 import android.app.Application
 import android.net.Uri
+import androidx.core.net.toUri
+import com.juying.tv.util.sha256
+import java.io.File
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.juying.tv.data.AppGraph
@@ -15,6 +18,7 @@ import com.juying.tv.data.repo.PlaybackBundle
 import com.juying.tv.data.repo.ResolvedEpisode
 import com.juying.tv.data.source.QuarkConfig
 import com.juying.tv.data.source.WebDavConfig
+import com.juying.tv.data.scrape.ScrapeMatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -27,6 +31,17 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+data class ScrapeUiState(
+    val running: Boolean = false,
+    val currentTitle: String = "",
+    val index: Int = 0,
+    val total: Int = 0,
+    val matched: Int = 0,
+    val failed: Int = 0,
+    val finished: Boolean = false,
+    val message: String? = null
+)
 
 data class ScanUiState(
     val running: Boolean = false,
@@ -48,10 +63,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _scanState = MutableStateFlow<ScanUiState?>(null)
     val scanState: StateFlow<ScanUiState?> = _scanState.asStateFlow()
 
+    private val _scrapeState = MutableStateFlow<ScrapeUiState?>(null)
+    val scrapeState: StateFlow<ScrapeUiState?> = _scrapeState.asStateFlow()
+
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val events = _events.asSharedFlow()
 
     private var scanJob: Job? = null
+    private var scrapeJob: Job? = null
 
     val sources = repo.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val series = repo.visibleSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -66,6 +85,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val autoNext = settings.autoNext.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
 
     val kidsSeries = repo.kidsSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val scrapeMeta = repo.scrapeMeta.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val scrapeMergeDuplicates = settings.scrapeMergeDuplicates
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val scrapeYearCollections = settings.scrapeYearCollections
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     val continueWatching = kidsMode.flatMapLatest { kids ->
         repo.continueWatching(kids)
@@ -348,6 +372,135 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateDuration(mediaId: String, durationMs: Long) {
         viewModelScope.launch { graph.playbackResolver.updateDuration(mediaId, durationMs) }
+    }
+
+    fun scrapeAll(force: Boolean = false) {
+        if (scrapeJob?.isActive == true) return
+        scrapeJob = viewModelScope.launch {
+            val all = series.value
+            val existing = runCatching { repo.getAllScrapeMeta().map { it.seriesId }.toSet() }
+                .getOrDefault(emptySet())
+            val targets = if (force) all else all.filter { it.id !in existing }
+            if (targets.isEmpty()) {
+                _events.emit("没有需要刮削的内容")
+                return@launch
+            }
+            var matched = 0
+            var failed = 0
+            var consecutiveFailures = 0
+            _scrapeState.value = ScrapeUiState(
+                running = true,
+                total = targets.size,
+                index = 0
+            )
+            for ((index, item) in targets.withIndex()) {
+                _scrapeState.value = _scrapeState.value?.copy(
+                    running = true,
+                    currentTitle = item.displayTitle,
+                    index = index + 1,
+                    total = targets.size,
+                    matched = matched,
+                    failed = failed
+                )
+                try {
+                    val candidates = graph.douban.search(item.displayTitle)
+                    val best = ScrapeMatcher.bestMatch(item.displayTitle, item.year, candidates)
+                    if (best != null) {
+                        val posterRef = if (item.coverUrl.isNullOrBlank() && !best.posterUrl.isNullOrBlank()) {
+                            cachePoster(best.posterUrl)
+                        } else {
+                            best.posterUrl
+                        }
+                        repo.applyScrape(item, best.copy(posterUrl = posterRef ?: best.posterUrl))
+                        matched++
+                    }
+                    consecutiveFailures = 0
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failed++
+                    consecutiveFailures++
+                    if (consecutiveFailures >= 3) {
+                        _scrapeState.value = ScrapeUiState(
+                            running = false,
+                            total = targets.size,
+                            index = index + 1,
+                            matched = matched,
+                            failed = failed,
+                            finished = true,
+                            message = "豆瓣刮削失败：${e.message ?: "请检查电视网络"}"
+                        )
+                        _events.emit("刮削中止：豆瓣刮削失败，请检查电视网络")
+                        return@launch
+                    }
+                }
+                kotlinx.coroutines.delay(3000)
+            }
+            if (scrapeMergeDuplicates.value) {
+                runCatching { repo.mergeScrapedDuplicates() }
+            }
+            if (scrapeYearCollections.value) {
+                runCatching { repo.ensureYearCollections() }
+            }
+            val summary = if (matched == 0) {
+                "刮削完成：匹配 0 部。可能没有对应豆瓣条目，或匿名接口被限流；可用“测试豆瓣连接”检查。"
+            } else {
+                "刮削完成：匹配 $matched 部，跳过 ${targets.size - matched} 部"
+            }
+            _scrapeState.value = ScrapeUiState(
+                running = false,
+                total = targets.size,
+                index = targets.size,
+                matched = matched,
+                failed = failed,
+                finished = true,
+                message = summary
+            )
+            _events.emit(summary)
+        }
+    }
+
+    fun cancelScrape() {
+        scrapeJob?.cancel()
+        scrapeJob = null
+        _scrapeState.value = ScrapeUiState(finished = true, message = "已取消刮削")
+    }
+
+    fun dismissScrapeBanner() {
+        _scrapeState.value = null
+    }
+
+    private suspend fun cachePoster(url: String): String? {
+        val bytes = graph.douban.downloadPoster(url) ?: return null
+        return runCatching {
+            val directory = File(getApplication<Application>().filesDir, "covers").apply { mkdirs() }
+            val file = File(directory, sha256(url).take(32) + ".jpg")
+            file.writeBytes(bytes)
+            file.toUri().toString()
+        }.getOrNull()
+    }
+
+    fun testScrapeConnection() {
+        viewModelScope.launch {
+            try {
+                val candidates = graph.douban.search("西游记")
+                val first = candidates.firstOrNull()
+                _events.emit(
+                    if (candidates.isEmpty()) "豆瓣连接成功，但“西游记”返回 0 条"
+                    else "豆瓣连接成功：${candidates.size} 条，首条 ${first?.title} (${first?.year ?: "未知年份"})"
+                )
+            } catch (e: Exception) {
+                _events.emit("豆瓣连接失败：${e.message ?: "未知错误"}")
+            }
+        }
+    }
+
+    fun setScrapeMergeDuplicates(enabled: Boolean) {
+        viewModelScope.launch { settings.setScrapeMergeDuplicates(enabled) }
+    }
+
+    fun setScrapeYearCollections(enabled: Boolean) {
+        viewModelScope.launch { settings.setScrapeYearCollections(enabled) }
     }
 
     fun setAutoNext(enabled: Boolean) {

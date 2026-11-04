@@ -194,3 +194,32 @@ data class ContinueItem(
     val progressFraction: Float
         get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
 }
+
+
+@Entity(
+    tableName = "scrape_meta",
+    foreignKeys = [
+        ForeignKey(
+            entity = SeriesEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["seriesId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index("externalId"),
+        Index(value = ["provider", "externalId"])
+    ]
+)
+data class ScrapeMetaEntity(
+    @PrimaryKey val seriesId: String,
+    val provider: String,
+    val externalId: String,
+    val title: String,
+    val originalTitle: String? = null,
+    val year: Int? = null,
+    val overview: String? = null,
+    val posterUrl: String? = null,
+    val matchedScore: Int = 0,
+    val updatedAt: Long = System.currentTimeMillis()
+)
