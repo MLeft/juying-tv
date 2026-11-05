@@ -7,6 +7,7 @@ import com.juying.tv.data.repo.LibraryRepository
 import com.juying.tv.data.repo.PlaybackResolver
 import com.juying.tv.data.scrape.DoubanClient
 import com.juying.tv.data.scrape.ScrapeService
+import com.juying.tv.data.scrape.TmdbClient
 import com.juying.tv.data.scrape.TvmazeClient
 import com.juying.tv.data.source.SourceScanner
 import com.juying.tv.data.source.quark.QuarkClient
@@ -32,7 +33,8 @@ class AppGraph(context: Context) {
     val quark = QuarkClient(okHttp)
     val douban = DoubanClient(okHttp)
     val tvmaze = TvmazeClient(okHttp)
-    val scrape = ScrapeService(appContext, douban, tvmaze)
+    val tmdb = TmdbClient(okHttp)
+    val scrape = ScrapeService(appContext, douban, tvmaze, tmdb)
     val scanner = SourceScanner(appContext, webDav, quark)
     val repository = LibraryRepository(appContext, database, scanner)
     val playbackResolver = PlaybackResolver(appContext, database, webDav, quark)

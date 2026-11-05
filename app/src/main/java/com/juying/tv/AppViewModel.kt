@@ -400,22 +400,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 index = 0
             )
 
-            val doubanReady = runCatching { graph.scrape.canary() }.getOrElse { e ->
-                if (e is ScrapeRateLimitedException) {
-                    _scrapeState.value = ScrapeUiState(
-                        running = false,
-                        total = targets.size,
-                        finished = true,
-                        message = e.message
-                    )
-                    _events.emit(e.message ?: "豆瓣限流")
-                    return@launch
-                }
-                false
-            }
+            val doubanReady = runCatching { graph.scrape.canary() }.getOrElse { false }
             if (!doubanReady) {
-                _events.emit("豆瓣当前返回空结果，将优先使用本地缓存和 TVmaze")
+                _events.emit("豆瓣当前限流，本次优先 TMDB / TVmaze 与本地缓存")
             }
+            val skipDouban = !doubanReady
 
             for ((index, item) in targets.withIndex()) {
                 _scrapeState.value = _scrapeState.value?.copy(
@@ -429,14 +418,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 var attempt = 0
                 while (true) {
                     try {
-                        val best = graph.scrape.findMatch(item, force)
+                        val best = graph.scrape.findMatch(item, force, skipDouban = skipDouban)
                         if (best != null) {
                             val posterRef = if (item.coverUrl.isNullOrBlank() && !best.posterUrl.isNullOrBlank()) {
                                 cachePoster(best)
                             } else {
                                 best.posterUrl
                             }
-                            repo.applyScrape(item, best.copy(posterUrl = posterRef ?: best.posterUrl))
+                            repo.applyScrape(item, best.copy(posterUrl = posterRef))
                             matched++
                             emptyStreak = 0
                         } else {
@@ -475,7 +464,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                if (emptyStreak >= 4) {
+                if (!skipDouban && emptyStreak >= 4) {
                     val stillHealthy = runCatching { graph.scrape.canary() }.getOrElse { false }
                     if (!stillHealthy) {
                         _scrapeState.value = _scrapeState.value?.copy(
@@ -551,8 +540,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 } else {
                     best.posterUrl
                 }
-                repo.applyScrape(target, best.copy(posterUrl = posterRef ?: best.posterUrl))
-                val source = if (best.provider == "tvmaze") "TVmaze" else "豆瓣"
+                repo.applyScrape(target, best.copy(posterUrl = posterRef))
+                val source = when (best.provider) {
+                    "tvmaze" -> "TVmaze"
+                    "tmdb" -> "TMDB"
+                    else -> "豆瓣"
+                }
                 _events.emit(
                     "已匹配（$source）：${best.title}" +
                         (best.year?.let { "（$it）" } ?: "") +
@@ -569,9 +562,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelScrape() {
+        val current = _scrapeState.value
         scrapeJob?.cancel()
         scrapeJob = null
-        _scrapeState.value = ScrapeUiState(finished = true, message = "已取消刮削")
+        _scrapeState.value = (current ?: ScrapeUiState()).copy(
+            running = false,
+            finished = true,
+            message = "已取消刮削"
+        )
     }
 
     fun dismissScrapeBanner() {
@@ -579,7 +577,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private suspend fun cachePoster(candidate: ScrapeCandidate): String? {
-        val bytes = graph.scrape.downloadPoster(candidate) ?: return null
+        val bytes = graph.scrape.downloadPoster(candidate) ?: run {
+            android.util.Log.w("JuyingScrape", "海报下载失败 ${candidate.provider}")
+            return null
+        }
         return runCatching {
             val directory = File(getApplication<Application>().filesDir, "covers").apply { mkdirs() }
             val ext = if (candidate.posterUrl?.contains(".png", true) == true) "png" else "jpg"
@@ -596,7 +597,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             val text = results.joinToString("；") { result ->
-                val name = if (result.provider == "tvmaze") "TVmaze" else "豆瓣"
+                val name = when (result.provider) {
+                    "tvmaze" -> "TVmaze"
+                    "tmdb" -> "TMDB"
+                    else -> "豆瓣"
+                }
                 if (result.ok) "$name 成功 ${result.count} 条" else "$name 失败：${result.detail}"
             }
             _events.emit(text)

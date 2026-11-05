@@ -9,7 +9,8 @@ import kotlinx.coroutines.withContext
 class ScrapeService(
     context: android.content.Context,
     private val douban: DoubanClient,
-    private val tvmaze: TvmazeClient
+    private val tvmaze: TvmazeClient,
+    private val tmdb: TmdbClient
 ) {
     private val cache = ScrapeCache(context)
 
@@ -17,7 +18,11 @@ class ScrapeService(
      * 多源刮削：英文片名优先 TVmaze，中文片名优先豆瓣；
      * 每个查询词最多两个变体，结果写入本地缓存。
      */
-    suspend fun findMatch(series: SeriesEntity, force: Boolean = false): ScrapeCandidate? {
+    suspend fun findMatch(
+        series: SeriesEntity,
+        force: Boolean = false,
+        skipDouban: Boolean = false
+    ): ScrapeCandidate? {
         val display = series.displayTitle.trim()
         val auto = series.autoTitle.trim()
         // 课程、儿歌、字母拼读等内容没有稳定的影视条目，直接跳过，避免浪费请求和误匹配。
@@ -34,32 +39,40 @@ class ScrapeService(
         val latinFirst = latin != null && cjkCount <= 2
 
         if (latinFirst) {
-            val hit = runCatching {
-                matchProvider("tvmaze", latin!!, series, force)
-            }.getOrElse { e ->
-                if (e is ScrapeRateLimitedException) throw e
-                Log.w("JuyingScrape", "TVmaze 查询失败: ${e.message}")
-                null
+            for (query in queryList) {
+                tryProvider("tmdb", query, series, force)?.let { return it }
             }
-            if (hit != null) return hit
-        }
-
-        for (query in queryList) {
-            val hit = matchProvider("douban", query, series, force)
-            if (hit != null) return hit
-        }
-
-        if (!latinFirst && latin != null) {
-            val hit = runCatching {
-                matchProvider("tvmaze", latin, series, force)
-            }.getOrElse { e ->
-                if (e is ScrapeRateLimitedException) throw e
-                Log.w("JuyingScrape", "TVmaze 查询失败: ${e.message}")
-                null
+            tryProvider("tvmaze", latin!!, series, force)?.let { return it }
+            if (!skipDouban) {
+                for (query in queryList) {
+                    tryProvider("douban", query, series, force)?.let { return it }
+                }
             }
-            if (hit != null) return hit
+        } else {
+            if (!skipDouban) {
+                for (query in queryList) {
+                    tryProvider("douban", query, series, force)?.let { return it }
+                }
+            }
+            tryProvider("tmdb", queryList.first(), series, force)?.let { return it }
+            if (latin != null) {
+                tryProvider("tvmaze", latin, series, force)?.let { return it }
+            }
         }
         return null
+    }
+
+    private suspend fun tryProvider(
+        provider: String,
+        query: String,
+        series: SeriesEntity,
+        force: Boolean
+    ): ScrapeCandidate? = runCatching {
+        matchProvider(provider, query, series, force)
+    }.getOrElse { e ->
+        if (e is ScrapeRateLimitedException) throw e
+        Log.w("JuyingScrape", "$provider 查询失败: ${e.message}")
+        null
     }
 
     private suspend fun matchProvider(
@@ -74,6 +87,7 @@ class ScrapeService(
             val loaded = when (provider) {
                 "douban" -> douban.search(query)
                 "tvmaze" -> tvmaze.search(query)
+                "tmdb" -> tmdb.search(query)
                 else -> emptyList()
             }
             cache.put(key, loaded)
@@ -120,6 +134,35 @@ class ScrapeService(
                 ScrapeSourceTest("tvmaze", false, 0, e.message ?: "请求失败")
             }
         )
+        val tmdbResult = runCatching { tmdb.search("Numberblocks") }
+        results += tmdbResult.fold(
+            onSuccess = { list ->
+                val posterBytes = list.firstOrNull { !it.posterUrl.isNullOrBlank() }
+                    ?.let { candidate -> runCatching { tmdb.downloadPoster(candidate.posterUrl!!) }.getOrNull() }
+                android.util.Log.i(
+                    "JuyingScrape",
+                    "TMDB 测试：${list.size} 条，海报=${if (posterBytes != null) "可下载" else "不可直连"}"
+                )
+                val posterDetail = when {
+                    list.none { !it.posterUrl.isNullOrBlank() } -> "无海报"
+                    posterBytes != null -> "海报可下载"
+                    else -> "海报不可直连（元数据仍可用）"
+                }
+                ScrapeSourceTest(
+                    provider = "tmdb",
+                    ok = list.isNotEmpty(),
+                    count = list.size,
+                    detail = if (list.isEmpty()) {
+                        "返回 0 条，可能 Key 受限"
+                    } else {
+                        "正常，首条 ${list.first().title}；$posterDetail"
+                    }
+                )
+            },
+            onFailure = { e ->
+                ScrapeSourceTest("tmdb", false, 0, e.message ?: "请求失败")
+            }
+        )
         results
     }
 
@@ -128,6 +171,7 @@ class ScrapeService(
         return when (candidate.provider) {
             "douban" -> douban.downloadPoster(url)
             "tvmaze" -> tvmaze.downloadPoster(url)
+            "tmdb" -> tmdb.downloadPoster(url)
             else -> null
         }
     }
