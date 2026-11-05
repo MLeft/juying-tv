@@ -493,7 +493,12 @@ private fun SeriesEditDialog(
         focus.requestFocus()
     }
 
-    TvDialog(onDismiss = onDismiss, modifier = Modifier.width(760.dp)) {
+    TvDialog(
+        onDismiss = onDismiss,
+        modifier = Modifier
+            .width(760.dp)
+            .heightIn(max = 456.dp)
+    ) {
         Text(
             "编辑「${series.displayTitle}」",
             color = JuyingColors.TextPrimary,
@@ -509,7 +514,7 @@ private fun SeriesEditDialog(
         Spacer(Modifier.height(16.dp))
         Column(
             Modifier
-                .heightIn(max = 360.dp)
+                .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
