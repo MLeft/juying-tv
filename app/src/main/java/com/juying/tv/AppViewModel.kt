@@ -358,8 +358,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun preparePlayback(
         mediaId: String,
         kidsOnly: Boolean,
-        fromStart: Boolean = false
-    ): PlaybackBundle = graph.playbackResolver.prepare(mediaId, kidsOnly, fromStart)
+        fromStart: Boolean = false,
+        forceRefresh: Boolean = false
+    ): PlaybackBundle = graph.playbackResolver.prepare(mediaId, kidsOnly, fromStart, forceRefresh)
 
     suspend fun resolveEpisode(mediaId: String): ResolvedEpisode =
         graph.playbackResolver.resolve(mediaId)

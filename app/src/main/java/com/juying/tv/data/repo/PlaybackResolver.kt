@@ -51,18 +51,27 @@ class PlaybackResolver(
     private val quark: QuarkClient
 ) {
 
-    suspend fun prepare(mediaId: String, kidsOnly: Boolean, fromStart: Boolean = false): PlaybackBundle {
+    suspend fun prepare(
+        mediaId: String,
+        kidsOnly: Boolean,
+        fromStart: Boolean = false,
+        forceRefresh: Boolean = false
+    ): PlaybackBundle {
         val media = database.mediaDao().find(mediaId) ?: throw IOException("媒体条目已不存在，请重新扫描")
         val series = database.seriesDao().find(media.seriesId)
             ?: throw IOException("剧集信息已丢失，请重新扫描")
         val episodes = database.mediaDao().getBySeries(series.id, kidsOnly)
         val index = episodes.indexOfFirst { it.id == mediaId }
         if (index < 0) throw IOException("该内容未在儿童模式允许列表中")
-        val resolved = resolve(mediaId, ignoreProgress = fromStart)
+        val resolved = resolve(mediaId, ignoreProgress = fromStart, forceRefresh = forceRefresh)
         return PlaybackBundle(series, episodes, index, resolved)
     }
 
-    suspend fun resolve(mediaId: String, ignoreProgress: Boolean = false): ResolvedEpisode {
+    suspend fun resolve(
+        mediaId: String,
+        ignoreProgress: Boolean = false,
+        forceRefresh: Boolean = false
+    ): ResolvedEpisode {
         val media = database.mediaDao().find(mediaId) ?: throw IOException("媒体条目已不存在")
         val source = database.sourceDao().find(media.sourceId)
             ?: throw IOException("媒体源已被删除")
@@ -88,7 +97,7 @@ class PlaybackResolver(
             }
             SourceType.QUARK -> {
                 val quarkConfig = config as QuarkConfig
-                url = quark.getDownloadUrl(quarkConfig, media.playRef)
+                url = quark.getDownloadUrl(quarkConfig, media.playRef, forceRefresh)
                 headers = quark.playbackHeaders(quarkConfig)
             }
             else -> {

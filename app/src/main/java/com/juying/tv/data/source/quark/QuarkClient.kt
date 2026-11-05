@@ -33,9 +33,46 @@ class QuarkClient(private val client: OkHttpClient) {
         private const val REFERER = "https://pan.quark.cn/"
         private const val USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        // 夸克会对大文件直链返回 23018；官方 PC 客户端 UA 可以绕过该限制。
+        private const val PC_USER_AGENT =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) quark-cloud-drive/2.5.56 Chrome/100.0.4896.160 Electron/18.3.5.12-a038f7b798 Safari/537.36 Channel/pckk_other_ch"
     }
 
     private val urlCache = ConcurrentHashMap<String, Pair<String, Long>>()
+
+    /**
+     * 夸克接口每次响应都会通过 Set-Cookie 续期 __puus。只保留内存中的最新值，
+     * 供同一次播放的直链请求使用；原始 Cookie 仍保存在媒体源配置里。
+     */
+    private val cookieOverrides = ConcurrentHashMap<String, String>()
+
+    private fun currentCookie(config: QuarkConfig): String {
+        val base = normalizeCookie(config.cookie)
+        return cookieOverrides[base.hashCode().toString()] ?: base
+    }
+
+    private fun captureCookies(baseCookie: String, response: okhttp3.Response) {
+        val setCookies = response.headers("Set-Cookie")
+        if (setCookies.isEmpty()) return
+        val key = baseCookie.hashCode().toString()
+        val current = cookieOverrides[key] ?: baseCookie
+        val merged = LinkedHashMap<String, String>()
+        current.split(';').forEach { part ->
+            val name = part.substringBefore('=').trim()
+            if (name.isNotEmpty()) merged[name] = part.substringAfter('=', "").trim()
+        }
+        setCookies.forEach { raw ->
+            val pair = raw.substringBefore(';')
+            val name = pair.substringBefore('=').trim()
+            val value = pair.substringAfter('=', "").trim()
+            if (name.isNotEmpty() && value.isNotEmpty()) merged[name] = value
+        }
+        val updated = merged.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        if (updated != current) {
+            cookieOverrides[key] = updated
+            android.util.Log.i("JuyingQuark", "Cookie 已自动续期（${setCookies.size} 项）")
+        }
+    }
 
     suspend fun test(config: QuarkConfig): String = withContext(Dispatchers.IO) {
         val fid = config.effectiveRoots().firstOrNull()?.fid ?: "0"
@@ -74,34 +111,43 @@ class QuarkClient(private val client: OkHttpClient) {
         }
 
     fun playbackHeaders(config: QuarkConfig): Map<String, String> = mapOf(
-        "User-Agent" to USER_AGENT,
+        "User-Agent" to PC_USER_AGENT,
         "Referer" to REFERER,
         "Origin" to "https://pan.quark.cn",
-        "Cookie" to normalizeCookie(config.cookie)
+        "Cookie" to currentCookie(config)
     )
 
-    suspend fun getDownloadUrl(config: QuarkConfig, fid: String): String = withContext(Dispatchers.IO) {
-        val cacheKey = "${normalizeCookie(config.cookie).hashCode()}:$fid"
-        val cached = urlCache[cacheKey]
-        if (cached != null && System.currentTimeMillis() - cached.second < 3 * 60 * 1000L) {
-            return@withContext cached.first
+    suspend fun getDownloadUrl(
+        config: QuarkConfig,
+        fid: String,
+        forceRefresh: Boolean = false
+    ): String = withContext(Dispatchers.IO) {
+        val baseCookie = normalizeCookie(config.cookie)
+        val cacheKey = "${baseCookie.hashCode()}:$fid"
+        if (!forceRefresh) {
+            val cached = urlCache[cacheKey]
+            if (cached != null && System.currentTimeMillis() - cached.second < 3 * 60 * 1000L) {
+                return@withContext cached.first
+            }
         }
-        val url = "$BASE/file/download?pr=ucpro&fr=pc".toHttpUrl()
+        val url = "$BASE/file/download?pr=ucpro&fr=pc&sys=win32&ve=2.5.56&ut=&guid=".toHttpUrl()
         val body = JSONObject().put("fids", JSONArray().put(fid)).toString()
         val request = Request.Builder()
             .url(url)
             .post(body.toRequestBody("application/json;charset=UTF-8".toMediaType()))
             .headers(okhttp3.Headers.Builder().apply {
-                add("User-Agent", USER_AGENT)
+                add("User-Agent", PC_USER_AGENT)
                 add("Referer", REFERER)
                 add("Origin", "https://pan.quark.cn")
-                add("Cookie", normalizeCookie(config.cookie))
+                add("Cookie", currentCookie(config))
                 add("Accept", "application/json, text/plain, */*")
+                add("Accept-Language", "zh-CN,zh;q=0.9")
             }.build())
             .build()
 
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("夸克接口 HTTP ${response.code}")
+            captureCookies(baseCookie, response)
             val text = response.body?.string().orEmpty()
             val json = runCatching { JSONObject(text) }.getOrElse {
                 throw IOException("夸克接口返回异常，请稍后重试")
@@ -132,12 +178,13 @@ class QuarkClient(private val client: OkHttpClient) {
         val request = Request.Builder()
             .url(url)
             .get()
-            .header("User-Agent", USER_AGENT)
+            .header("User-Agent", PC_USER_AGENT)
             .header("Referer", REFERER)
-            .header("Cookie", normalizeCookie(config.cookie))
+            .header("Cookie", currentCookie(config))
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IOException("下载夸克文件失败：HTTP ${response.code}")
+            captureCookies(normalizeCookie(config.cookie), response)
             val body = response.body ?: throw IOException("文件内容为空")
             if (body.contentLength() > maxBytes) throw IOException("文件过大")
             val bytes = body.bytes()
@@ -213,12 +260,13 @@ class QuarkClient(private val client: OkHttpClient) {
                 .header("User-Agent", USER_AGENT)
                 .header("Referer", REFERER)
                 .header("Origin", "https://pan.quark.cn")
-                .header("Cookie", normalizeCookie(config.cookie))
+                .header("Cookie", currentCookie(config))
                 .header("Accept", "application/json, text/plain, */*")
                 .build()
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) throw IOException("夸克接口 HTTP ${response.code}")
+                captureCookies(normalizeCookie(config.cookie), response)
                 val text = response.body?.string().orEmpty()
                 val json = runCatching { JSONObject(text) }.getOrElse {
                     throw IOException("夸克返回内容无法解析，可能登录已失效")
@@ -257,10 +305,12 @@ class QuarkClient(private val client: OkHttpClient) {
         if (code != 0) {
             val message = json.optString("message").ifBlank { "错误码 $code" }
             throw IOException(
-                if (code == 31001 || message.contains("登录", ignoreCase = true)) {
-                    "夸克登录已失效，请重新填写 Cookie"
-                } else {
-                    "夸克接口错误：$message"
+                when {
+                    code == 31001 || message.contains("登录", ignoreCase = true) ->
+                        "夸克登录已失效，请重新填写 Cookie"
+                    code == 23018 ->
+                        "夸克限制了大文件直链（23018），当前播放地址无法获取。可改用 AList/WebDAV 接入夸克，或选择较小的片源。"
+                    else -> "夸克接口错误：$message（$code）"
                 }
             )
         }

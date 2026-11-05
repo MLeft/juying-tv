@@ -2,6 +2,7 @@ package com.juying.tv.ui.screens
 
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
+import android.util.Log
 import android.util.TypedValue
 import android.view.KeyEvent as AndroidKeyEvent
 import android.view.View
@@ -169,11 +170,17 @@ fun PlayerScreen(
         loading = true
         error = null
         try {
-            val prepared = viewModel.preparePlayback(mediaId, kidsMode, fromStart)
+            val prepared = viewModel.preparePlayback(
+                mediaId = mediaId,
+                kidsOnly = kidsMode,
+                fromStart = fromStart,
+                forceRefresh = reload > 0
+            )
             bundle = prepared
             currentIndex = prepared.index
             resolved = prepared.resolved
         } catch (e: Exception) {
+            Log.w("JuyingPlayer", "打开视频失败: ${e.message}", e)
             error = e.message ?: "打开视频失败"
         } finally {
             loading = false
@@ -338,6 +345,11 @@ fun PlayerScreen(
                 }
 
                 override fun onPlayerError(e: PlaybackException) {
+                    Log.w(
+                        "JuyingPlayer",
+                        "播放器错误 ${e.errorCodeName}: ${e.message}; host=${resolved?.url?.substringAfter("://")?.substringBefore('/')}",
+                        e
+                    )
                     error = friendlyPlaybackError(e)
                     loading = false
                 }
@@ -1182,7 +1194,7 @@ private fun PlayerErrorPane(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "如果是夸克网盘资源，可能是 Cookie 失效或播放链接过期。返回媒体库重新进入播放通常可以刷新链接。",
+                "如果是夸克网盘资源，可能是播放链接过期、夸克对大文件直链的限制，或 Cookie 已失效。点“重试”会重新获取播放地址；仍失败可在设置中检查 Cookie。",
                 color = JuyingColors.TextMuted,
                 style = MaterialTheme.typography.bodySmall,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -1227,9 +1239,16 @@ private fun applySubtitle(player: ExoPlayer, option: SubtitleOption) {
 private fun friendlyPlaybackError(error: PlaybackException): String {
     val detail = error.errorCodeName
     val message = error.message ?: ""
+    val httpStatus = generateSequence(error.cause) { it.cause }
+        .filterIsInstance<androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException>()
+        .firstOrNull()?.responseCode
     return when {
-        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
-            "媒体服务器返回了错误状态。请检查媒体源地址、账号权限，或重新登录。"
+        error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> when (httpStatus) {
+            401, 403, 412 ->
+                "媒体服务器拒绝访问（HTTP $httpStatus），播放链接或夸克登录状态已过期。请重新进入播放或重新填写 Cookie。"
+            404 -> "视频文件不存在（HTTP 404），可能已被移动或删除，请重新扫描媒体源。"
+            else -> "媒体服务器返回了错误状态${httpStatus?.let { "（HTTP $it）" } ?: ""}。请检查媒体源地址、账号权限，或重新登录。"
+        }
         error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
             "找不到视频文件，可能已被移动或删除。请重新扫描媒体源。"
         error.errorCode == PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ||
