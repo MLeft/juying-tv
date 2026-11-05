@@ -87,8 +87,12 @@ import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
+import androidx.media3.extractor.DefaultExtractorsFactory
+import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
@@ -192,13 +196,30 @@ fun PlayerScreen(
             val httpFactory = OkHttpDataSource.Factory(graph.okHttp)
                 .setDefaultRequestProperties(r.headers)
             val dataSourceFactory = DefaultDataSource.Factory(context, httpFactory)
-            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
-            ExoPlayer.Builder(context)
+            // Media3 默认提取器之外，追加 HLS/DASH 与 TS 时间戳容错；
+            // FFmpeg 扩展负责硬件解码器不支持的特殊音轨（AC3/DTS/TrueHD 等）。
+            val extractorsFactory = DefaultExtractorsFactory()
+                .setTsExtractorTimestampSearchBytes(1500 * TsExtractor.TS_PACKET_SIZE)
+            val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory, extractorsFactory)
+            val renderersFactory = DefaultRenderersFactory(context)
+                .setEnableDecoderFallback(true)
+                .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            val trackSelector = DefaultTrackSelector(context).apply {
+                setParameters(
+                    buildUponParameters()
+                        .setPreferredAudioLanguage("zh")
+                        .setPreferredTextLanguage("zh")
+                )
+            }
+            ExoPlayer.Builder(context, renderersFactory)
+                .setTrackSelector(trackSelector)
                 .setMediaSourceFactory(mediaSourceFactory)
                 .build()
                 .apply {
+                    setHandleAudioBecomingNoisy(true)
                     val builder = MediaItem.Builder().setUri(r.url)
-                    r.mime?.let { builder.setMimeType(it) }
+                    val mime = r.mime?.takeIf { it.isNotBlank() && it != "application/octet-stream" }
+                    mime?.let { builder.setMimeType(it) }
                     if (r.subtitles.isNotEmpty()) {
                         builder.setSubtitleConfigurations(
                             r.subtitles.map { sub ->

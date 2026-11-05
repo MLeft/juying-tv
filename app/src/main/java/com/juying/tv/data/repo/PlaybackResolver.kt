@@ -13,6 +13,7 @@ import com.juying.tv.data.source.SubtitleRefs
 import com.juying.tv.data.source.WebDavConfig
 import com.juying.tv.data.source.quark.QuarkClient
 import com.juying.tv.data.source.webdav.WebDavClient
+import com.juying.tv.util.SubtitleEncoding
 import com.juying.tv.util.sha256
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -152,7 +153,7 @@ class PlaybackResolver(
                             SubtitleSpec(Uri.fromFile(file), subtitle.label, subtitle.mime, languageOf(subtitle))
                         }
                         else -> {
-                            val uri = Uri.parse(subtitle.ref)
+                            val uri = localSubtitleUri(Uri.parse(subtitle.ref))
                             SubtitleSpec(uri, subtitle.label, subtitle.mime, languageOf(subtitle))
                         }
                     }
@@ -163,12 +164,35 @@ class PlaybackResolver(
 
     private suspend fun cacheSubtitle(key: String, extension: String, downloader: suspend () -> ByteArray): File {
         val dir = File(context.cacheDir, "subtitles").apply { mkdirs() }
-        val file = File(dir, "${sha256(key).take(24)}.$extension")
+        // utf8 后缀用于区分旧版本缓存的原始编码字幕。
+        val file = File(dir, "${sha256("$key|utf8").take(24)}.$extension")
         if (file.exists() && file.length() > 0) return file
-        val bytes = downloader()
+        val bytes = SubtitleEncoding.toUtf8(downloader())
         if (bytes.isEmpty()) throw IOException("字幕内容为空")
         file.writeBytes(bytes)
         return file
+    }
+
+    private suspend fun localSubtitleUri(uri: Uri): Uri = withContext(Dispatchers.IO) {
+        val scheme = uri.scheme?.lowercase()
+        if (scheme == "http" || scheme == "https") return@withContext uri
+        try {
+            val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytes == null || bytes.isEmpty() || bytes.size > 4 * 1024 * 1024) return@withContext uri
+            val converted = SubtitleEncoding.toUtf8(bytes)
+            if (converted.contentEquals(bytes)) {
+                uri
+            } else {
+                val dir = File(context.cacheDir, "subtitles").apply { mkdirs() }
+                val ext = uri.path?.substringAfterLast('.', "")?.lowercase()
+                    ?.takeIf { it in setOf("srt", "ass", "ssa", "vtt") } ?: "srt"
+                val file = File(dir, "local-${sha256(uri.toString()).take(24)}.$ext")
+                file.writeBytes(converted)
+                Uri.fromFile(file)
+            }
+        } catch (e: Exception) {
+            uri
+        }
     }
 
     private fun extensionForMime(mime: String): String = when {

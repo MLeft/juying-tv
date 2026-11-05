@@ -22,14 +22,14 @@
 APK 已生成：
 
 ```
-dist/JuyingTV-1.1.8.apk
+dist/JuyingTV-1.1.9.apk
 ```
 
 ### ADB 安装（推荐）
 
 ```bash
 adb connect 192.168.1.196:5555
-adb install -r dist/JuyingTV-1.1.8.apk
+adb install -r dist/JuyingTV-1.1.9.apk
 ```
 
 如果电视提示“禁止安装未知来源应用”，请在电视的开发者选项/安全设置中允许 ADB 安装。首次连接需要在电视上确认调试授权。
@@ -92,7 +92,10 @@ adb install -r dist/JuyingTV-1.1.8.apk
 - D-pad 遥控器交互：OK 显示/隐藏控制层、左右快退/快进 10 秒、返回键先收控制层再退出。
 - 选集面板、上一集/下一集、自动连播（可关闭）、0.75–2.0 倍速。
 - 画面比例：适应、裁切、拉伸、原始。
-- 字幕轨选择、外挂字幕自动加载、字幕上移避开控制栏。
+- 字幕轨选择、外挂字幕自动加载、字幕上移避开控制栏；自动检测 GBK/Big5 字幕并转成 UTF-8，避免乱码。
+- 接入 Media3 FFmpeg 解码扩展：AC3 / EAC3 / DTS / DTS-HD / TrueHD / FLAC / ALAC 等特殊音轨可由软件解码兜底，H.264 / HEVC 也支持软件兜底。
+- 开启解码器回退（硬件解码失败时尝试软件解码），并补充 HLS / DASH 流媒体解析。
+- 优先选择中文音轨与中文字幕（多音轨 MKV 更友好）。
 - 音频焦点与后台暂停：按 Home 离开应用会暂停并保存进度。
 - 错误提示与重试；夸克链接过期时会提示重新进入播放刷新地址。
 
@@ -159,6 +162,14 @@ adb install -r dist/JuyingTV-1.1.8.apk
 - 会员权益、文件风控可能影响播放；
 - 如果追求更稳定的长期使用，推荐把夸克挂载到 **AList / OpenList**，再用本项目 WebDAV 源接入。
 
+## 第三方播放组件
+
+- Media3 / ExoPlayer 1.3.1（Apache-2.0）；
+- Jellyfin `media3-ffmpeg-decoder` 1.3.1+2（GPL-3.0，内含 FFmpeg 软解，用于特殊音轨/编码兜底）；
+- juniversalchardet 2.5.2（MPL-1.1 / GPL-2.0 / LGPL-2.1 三选一，用于字幕编码检测）。
+
+如果后续公开发布 APK，需要遵守上述组件的许可证（尤其是 GPL 组件的源码提供义务）；个人自用不受影响。
+
 ## 构建
 
 环境：JDK 17、Android SDK Platform 34、Build-Tools 34.0.0。
@@ -210,4 +221,4 @@ docs/screenshots/    实机界面截图
 
 ---
 
-版本：1.1.8 · 构建日期：2026-11-05
+版本：1.1.9 · 构建日期：2026-11-05
