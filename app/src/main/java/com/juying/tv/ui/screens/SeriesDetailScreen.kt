@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -51,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
 import androidx.tv.foundation.lazy.grid.itemsIndexed
@@ -76,8 +77,8 @@ import com.juying.tv.ui.components.TvChip
 import com.juying.tv.ui.components.TvDialog
 import com.juying.tv.ui.components.TvTextField
 import com.juying.tv.ui.theme.JuyingColors
-import com.juying.tv.util.formatDuration
 import com.juying.tv.util.formatEpisode
+import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -182,8 +183,8 @@ fun SeriesDetailScreen(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(220.dp)
-                .clip(RoundedCornerShape(22.dp))
+                .height(160.dp)
+                .clip(RoundedCornerShape(20.dp))
         ) {
             SeriesArtwork(current, Modifier.fillMaxSize(), showTitleFallback = false)
             Box(
@@ -221,22 +222,22 @@ fun SeriesDetailScreen(
                     current.year?.let { Badge(it.toString(), JuyingColors.TextSecondary) }
                     if (kidsMode) Badge("儿童模式", JuyingColors.KidsAccent)
                 }
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
                 Text(
                     current.displayTitle,
                     color = JuyingColors.TextPrimary,
-                    style = MaterialTheme.typography.headlineLarge,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     if (multiSeason) "$seasonCount 季 · ${media.size} 个可播放视频" else "${media.size} 个可播放视频 · 自动归集",
                     color = JuyingColors.TextSecondary,
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodySmall
                 )
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(8.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     TvButton(
                         text = when {
@@ -268,17 +269,7 @@ fun SeriesDetailScreen(
             }
         }
 
-        if (!current.overview.isNullOrBlank()) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                current.overview.orEmpty(),
-                color = JuyingColors.TextSecondary,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 if (current.kind == SeriesKind.MOVIE) "影片" else "剧集列表",
@@ -346,11 +337,11 @@ fun SeriesDetailScreen(
             )
         } else {
             TvLazyVerticalGrid(
-                columns = TvGridCells.Fixed(3),
+                columns = TvGridCells.Fixed(4),
                 state = rememberTvLazyGridState(),
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = 20.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 itemsIndexed(visibleMedia, key = { _, it -> it.id }) { index, item ->
@@ -358,9 +349,14 @@ fun SeriesDetailScreen(
                     val fraction = p?.let {
                         if (it.durationMs > 0) (it.positionMs.toFloat() / it.durationMs).coerceIn(0f, 1f) else 0f
                     } ?: 0f
-                    EpisodeRow(
+                    var thumbnail by remember(item.id) { mutableStateOf<File?>(null) }
+                    LaunchedEffect(item.id) {
+                        thumbnail = viewModel.episodeThumbnail(item.id)
+                    }
+                    EpisodeCard(
                         series = current,
                         media = item,
+                        thumbnail = thumbnail,
                         progress = fraction,
                         isCurrent = item.id == resume?.id,
                         multiSeason = multiSeason,
@@ -369,7 +365,7 @@ fun SeriesDetailScreen(
                             index == 0 -> Modifier
                                 .focusRequester(firstEpisodeFocus)
                                 .focusProperties { up = firstRowUp }
-                            index < 3 -> Modifier.focusProperties { up = firstRowUp }
+                            index < 4 -> Modifier.focusProperties { up = firstRowUp }
                             else -> Modifier
                         }
                     )
@@ -402,9 +398,10 @@ fun SeriesDetailScreen(
 }
 
 @Composable
-private fun EpisodeRow(
+private fun EpisodeCard(
     series: SeriesEntity,
     media: MediaEntity,
+    thumbnail: File?,
     progress: Float,
     isCurrent: Boolean,
     multiSeason: Boolean,
@@ -413,55 +410,89 @@ private fun EpisodeRow(
 ) {
     FocusableSurface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(62.dp),
-        shape = RoundedCornerShape(13.dp),
-        focusedScale = 1.02f,
-        backgroundColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.08f) else JuyingColors.Surface.copy(alpha = 0.34f),
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        focusedScale = 1.04f,
+        backgroundColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.1f) else JuyingColors.Surface.copy(alpha = 0.45f),
         focusedBackgroundColor = JuyingColors.SurfaceFocused,
-        borderColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.4f) else JuyingColors.Outline.copy(alpha = 0.45f)
+        borderColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.55f) else JuyingColors.Outline.copy(alpha = 0.45f),
+        focusedBorderColor = JuyingColors.Gold
     ) {
-        Row(Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+            if (thumbnail != null) {
+                AsyncImage(
+                    model = thumbnail,
+                    contentDescription = episodeDisplay(media, multiSeason),
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF233248), Color(0xFF101A29))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        if (series.kind == SeriesKind.MOVIE) "影" else media.episode.toString().padStart(2, '0'),
+                        color = JuyingColors.TextMuted,
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
             Box(
                 Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(if (isCurrent) JuyingColors.Gold else JuyingColors.SurfaceHigh),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    if (series.kind == SeriesKind.MOVIE) "影" else media.episode.toString().padStart(2, '0'),
-                    color = if (isCurrent) JuyingColors.OnGold else JuyingColors.TextPrimary,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (series.kind == SeriesKind.MOVIE) series.displayTitle else episodeDisplay(media, multiSeason),
-                    color = JuyingColors.TextPrimary,
-                    style = MaterialTheme.typography.titleMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    listOfNotNull(
-                        media.fileName.takeIf { it.isNotBlank() },
-                        if (media.durationMs > 0) formatDuration(media.durationMs) else null
-                    ).joinToString(" · "),
-                    color = JuyingColors.TextMuted,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))
+                        )
+                    )
+            )
+            Text(
+                if (series.kind == SeriesKind.MOVIE) "电影" else episodeDisplay(media, multiSeason),
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(7.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
+            )
+            Text(
+                media.fileName.substringBeforeLast('.').ifBlank { episodeDisplay(media, multiSeason) },
+                color = Color.White,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .padding(start = 8.dp, end = 30.dp, bottom = 7.dp)
+            )
+            Icon(
+                Icons.Rounded.PlayArrow,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.92f),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(7.dp)
+                    .size(18.dp)
+            )
             if (progress > 0f) {
-                Box(Modifier.width(54.dp)) {
-                    ProgressLine(progress, Modifier.fillMaxWidth())
-                }
-                Spacer(Modifier.width(10.dp))
+                ProgressLine(
+                    progress,
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                )
             }
-            Icon(Icons.Rounded.PlayArrow, contentDescription = null, tint = JuyingColors.TextSecondary, modifier = Modifier.size(18.dp))
         }
     }
 }

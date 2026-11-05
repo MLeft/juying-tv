@@ -365,6 +365,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     suspend fun resolveEpisode(mediaId: String): ResolvedEpisode =
         graph.playbackResolver.resolve(mediaId)
 
+    suspend fun episodeThumbnail(mediaId: String): java.io.File? =
+        graph.playbackResolver.episodeThumbnail(mediaId)
+
     fun saveProgress(mediaId: String, seriesId: String, positionMs: Long, durationMs: Long) {
         viewModelScope.launch {
             repo.saveProgress(mediaId, seriesId, positionMs, durationMs)

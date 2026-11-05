@@ -170,6 +170,41 @@ class QuarkClient(private val client: OkHttpClient) {
         }
     }
 
+    /** 获取单集视频缩略图；接口返回静态图片，失败时回退到小图。 */
+    suspend fun fetchThumbnail(config: QuarkConfig, fid: String): ByteArray? = withContext(Dispatchers.IO) {
+        val candidates = listOf("quick", "thumbnail").map { kind ->
+            "https://drive-pc.quark.cn/1/clouddrive/file/video/$kind".toHttpUrl().newBuilder()
+                .addQueryParameter("fid", fid)
+                .addQueryParameter("pr", "ucpro")
+                .addQueryParameter("fr", "pc")
+                .build()
+                .toString()
+        }
+        suspend fun tryAll(): ByteArray? = candidates.firstNotNullOfOrNull { url ->
+            runCatching { fetchBytes(url, config, 4L * 1024 * 1024) }
+                .getOrNull()
+                ?.takeIf { isImage(it) }
+        }
+
+        tryAll()?.let {
+            android.util.Log.i("JuyingQuark", "缩略图获取成功 ${it.size}B")
+            return@withContext it
+        }
+        // 缩略图接口也可能遇到 __puus 过期，用下载接口续期后再试一次。
+        runCatching { getDownloadUrl(config, fid, forceRefresh = true) }
+        tryAll()
+    }
+
+    private fun isImage(bytes: ByteArray): Boolean {
+        if (bytes.size < 12) return false
+        val jpeg = bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()
+        val png = bytes[0] == 0x89.toByte() && bytes[1] == 0x50.toByte()
+        val gif = bytes[0] == 'G'.code.toByte() && bytes[1] == 'I'.code.toByte()
+        val webp = bytes[0] == 'R'.code.toByte() && bytes[1] == 'I'.code.toByte() &&
+            bytes[8] == 'W'.code.toByte() && bytes[9] == 'E'.code.toByte()
+        return jpeg || png || gif || webp
+    }
+
     suspend fun fetchBytes(
         url: String,
         config: QuarkConfig,

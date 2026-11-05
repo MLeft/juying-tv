@@ -1,6 +1,8 @@
 package com.juying.tv.data.repo
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.room.withTransaction
 import com.juying.tv.data.db.AppDatabase
@@ -16,6 +18,8 @@ import com.juying.tv.data.source.webdav.WebDavClient
 import com.juying.tv.util.SubtitleEncoding
 import com.juying.tv.util.sha256
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -51,6 +55,8 @@ class PlaybackResolver(
     private val webDav: WebDavClient,
     private val quark: QuarkClient
 ) {
+
+    private val thumbnailGate = Semaphore(3)
 
     suspend fun prepare(
         mediaId: String,
@@ -117,6 +123,42 @@ class PlaybackResolver(
             startPositionMs = start,
             durationMs = progress?.durationMs ?: media.durationMs
         )
+    }
+
+    /** 单集缩略图：夸克走网盘缩略图接口并缓存，本地文件抽取第 3 秒画面。 */
+    suspend fun episodeThumbnail(mediaId: String): File? = withContext(Dispatchers.IO) {
+        val media = database.mediaDao().find(mediaId) ?: return@withContext null
+        val source = database.sourceDao().find(media.sourceId) ?: return@withContext null
+        val dir = File(context.filesDir, "episode_thumbs").apply { mkdirs() }
+        val cache = File(dir, "${sha256(media.id).take(32)}.img")
+        if (cache.exists() && cache.length() > 0) return@withContext cache
+
+        when (source.type) {
+            SourceType.QUARK -> thumbnailGate.withPermit {
+                val config = SourceConfigs.decode(source.type, source.config) as QuarkConfig
+                val bytes = quark.fetchThumbnail(config, media.remoteId) ?: return@withPermit null
+                cache.writeBytes(bytes)
+                cache
+            }
+            SourceType.WEBDAV -> null
+            else -> {
+                val retriever = MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context, Uri.parse(media.playRef))
+                    val bitmap = retriever.getFrameAtTime(3_000_000, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                        ?: return@withContext null
+                    java.io.FileOutputStream(cache).use { out ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 82, out)
+                    }
+                    bitmap.recycle()
+                    cache
+                } catch (e: Exception) {
+                    null
+                } finally {
+                    runCatching { retriever.release() }
+                }
+            }
+        }
     }
 
     suspend fun updateDuration(mediaId: String, durationMs: Long) {
