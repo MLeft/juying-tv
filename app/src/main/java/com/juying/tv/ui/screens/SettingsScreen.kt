@@ -220,11 +220,11 @@ fun SettingsScreen(
         }
         item {
             SettingRow(
-                title = "开始刮削（豆瓣影视）",
+                title = "开始刮削（豆瓣 + TVmaze）",
                 subtitle = if (scrapeState?.running == true) {
                     "正在刮削 ${scrapeState?.index}/${scrapeState?.total} · ${scrapeState?.currentTitle}"
                 } else {
-                    "电影/剧集/动画免费数据源；已匹配 ${scrapeMeta.size} 部，未匹配的保留原目录"
+                    "中文内容优先豆瓣，英文动画/剧集用 TVmaze；带缓存与限流保护。已匹配 ${scrapeMeta.size} 部"
                 },
                 icon = Icons.Rounded.AutoAwesome,
                 onClick = {
@@ -246,10 +246,10 @@ fun SettingsScreen(
         }
         item {
             SettingRow(
-                title = "测试豆瓣连接",
-                subtitle = "只请求一次示例数据，不修改媒体库",
+                title = "测试刮削源",
+                subtitle = "分别请求豆瓣与 TVmaze 示例数据，不修改媒体库",
                 icon = Icons.Rounded.Cloud,
-                onClick = { viewModel.testScrapeConnection() }
+                onClick = { viewModel.testScrapeSources() }
             )
         }
         item {
@@ -281,8 +281,8 @@ fun SettingsScreen(
                     .padding(18.dp)
             ) {
                 Text(
-                    "豆瓣覆盖电影/剧集/动画，儿童课程、真人影视可能匹配不到。刮削只更新空白标题、海报、简介和年份；自动合并按豆瓣条目 ID 判断。" +
-                        "需要电视能访问 movie.douban.com；若是电影/剧集，后续可接入 TMDB。",
+                    "豆瓣覆盖中文电影/剧集/动画，TVmaze 补充英文动画与剧集；儿童课程、儿歌、字母拼读等通常没有条目，会自动跳过。" +
+                        "刮削只更新空白标题、海报、简介和年份，结果缓存 7 天；接口限流时会自动暂停重试，也可在剧集详情里单独刮削本剧。",
                     color = JuyingColors.TextMuted,
                     style = MaterialTheme.typography.bodySmall,
                     lineHeight = 20.sp

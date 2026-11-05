@@ -1,6 +1,9 @@
 package com.juying.tv.data.scrape
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -22,6 +25,9 @@ class DoubanClient(client: OkHttpClient) {
         .protocols(listOf(Protocol.HTTP_1_1))
         .build()
 
+    private val gate = Mutex()
+    private var nextRequestAt = 0L
+
     private val bid: String = buildString {
         val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         repeat(11) { append(chars.random()) }
@@ -36,6 +42,19 @@ class DoubanClient(client: OkHttpClient) {
     suspend fun search(query: String): List<ScrapeCandidate> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return@withContext emptyList()
+        gate.withLock {
+            val wait = nextRequestAt - System.currentTimeMillis()
+            if (wait > 0) delay(wait)
+            try {
+                request(trimmed)
+            } finally {
+                // 匿名接口的限流比较敏感，请求间隔保持在 3.2~4.4 秒。
+                nextRequestAt = System.currentTimeMillis() + 3_200L + kotlin.random.Random.nextLong(0, 1_200)
+            }
+        }
+    }
+
+    private fun request(trimmed: String): List<ScrapeCandidate> {
         val url = "https://movie.douban.com/j/subject_suggest"
             .toHttpUrl()
             .newBuilder()
@@ -51,8 +70,20 @@ class DoubanClient(client: OkHttpClient) {
             .header("Cookie", "bid=$bid")
             .build()
         client.newCall(request).execute().use { response ->
+            if (response.code == 403 || response.code == 418 || response.code == 429 || response.code >= 500) {
+                nextRequestAt = System.currentTimeMillis() + 60_000
+                throw ScrapeRateLimitedException(
+                    "douban",
+                    60_000,
+                    "豆瓣接口限流（HTTP ${response.code}），已暂停 60 秒"
+                )
+            }
             if (!response.isSuccessful) throw IOException("豆瓣接口 HTTP ${response.code}")
             val text = response.body?.string().orEmpty()
+            if (text.trimStart().startsWith("<")) {
+                nextRequestAt = System.currentTimeMillis() + 60_000
+                throw ScrapeRateLimitedException("douban", 60_000, "豆瓣返回了验证页面，已暂停 60 秒")
+            }
             val array = runCatching { JSONArray(text) }.getOrElse {
                 throw IOException("豆瓣返回内容无法解析，可能触发风控")
             }
@@ -73,10 +104,11 @@ class DoubanClient(client: OkHttpClient) {
                     year = year,
                     overview = null,
                     posterUrl = image,
-                    type = item.optString("type").ifBlank { null }
+                    type = item.optString("type").ifBlank { null },
+                    isSeries = item.optString("episode").isNotBlank()
                 )
             }
-            results
+            return results
         }
     }
 

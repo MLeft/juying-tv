@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -167,6 +168,16 @@ fun SeriesDetailScreen(
             if (sourceName != null) Badge(sourceName, JuyingColors.Blue)
             Spacer(Modifier.weight(1f))
             if (!kidsMode) {
+                TvChip(
+                    "刮削",
+                    onClick = { viewModel.scrapeSeries(seriesId) },
+                    icon = Icons.Rounded.AutoAwesome,
+                    modifier = Modifier.focusProperties {
+                        up = FocusRequester.Cancel
+                        down = playFocus
+                    }
+                )
+                Spacer(Modifier.width(8.dp))
                 TvChip(
                     "编辑信息",
                     onClick = { showEdit = true },

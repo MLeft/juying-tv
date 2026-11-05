@@ -18,7 +18,8 @@ import com.juying.tv.data.repo.PlaybackBundle
 import com.juying.tv.data.repo.ResolvedEpisode
 import com.juying.tv.data.source.QuarkConfig
 import com.juying.tv.data.source.WebDavConfig
-import com.juying.tv.data.scrape.ScrapeMatcher
+import com.juying.tv.data.scrape.ScrapeCandidate
+import com.juying.tv.data.scrape.ScrapeRateLimitedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -390,13 +391,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
             var matched = 0
+            var skipped = 0
             var failed = 0
-            var consecutiveFailures = 0
+            var emptyStreak = 0
             _scrapeState.value = ScrapeUiState(
                 running = true,
                 total = targets.size,
                 index = 0
             )
+
+            val doubanReady = runCatching { graph.scrape.canary() }.getOrElse { e ->
+                if (e is ScrapeRateLimitedException) {
+                    _scrapeState.value = ScrapeUiState(
+                        running = false,
+                        total = targets.size,
+                        finished = true,
+                        message = e.message
+                    )
+                    _events.emit(e.message ?: "豆瓣限流")
+                    return@launch
+                }
+                false
+            }
+            if (!doubanReady) {
+                _events.emit("豆瓣当前返回空结果，将优先使用本地缓存和 TVmaze")
+            }
+
             for ((index, item) in targets.withIndex()) {
                 _scrapeState.value = _scrapeState.value?.copy(
                     running = true,
@@ -406,40 +426,83 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     matched = matched,
                     failed = failed
                 )
-                try {
-                    val candidates = graph.douban.search(item.displayTitle)
-                    val best = ScrapeMatcher.bestMatch(item.displayTitle, item.year, candidates)
-                    if (best != null) {
-                        val posterRef = if (item.coverUrl.isNullOrBlank() && !best.posterUrl.isNullOrBlank()) {
-                            cachePoster(best.posterUrl)
+                var attempt = 0
+                while (true) {
+                    try {
+                        val best = graph.scrape.findMatch(item, force)
+                        if (best != null) {
+                            val posterRef = if (item.coverUrl.isNullOrBlank() && !best.posterUrl.isNullOrBlank()) {
+                                cachePoster(best)
+                            } else {
+                                best.posterUrl
+                            }
+                            repo.applyScrape(item, best.copy(posterUrl = posterRef ?: best.posterUrl))
+                            matched++
+                            emptyStreak = 0
                         } else {
-                            best.posterUrl
+                            skipped++
+                            emptyStreak++
                         }
-                        repo.applyScrape(item, best.copy(posterUrl = posterRef ?: best.posterUrl))
-                        matched++
-                    }
-                    consecutiveFailures = 0
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    failed++
-                    consecutiveFailures++
-                    if (consecutiveFailures >= 3) {
-                        _scrapeState.value = ScrapeUiState(
-                            running = false,
-                            total = targets.size,
-                            index = index + 1,
-                            matched = matched,
-                            failed = failed,
-                            finished = true,
-                            message = "豆瓣刮削失败：${e.message ?: "请检查电视网络"}"
+                        break
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: ScrapeRateLimitedException) {
+                        attempt++
+                        if (attempt > 2) {
+                            val summary = "刮削中止：${e.message ?: "豆瓣限流"}。已匹配 $matched 部，跳过 $skipped 部，稍后可继续。"
+                            _scrapeState.value = ScrapeUiState(
+                                running = false,
+                                total = targets.size,
+                                index = index + 1,
+                                matched = matched,
+                                failed = failed,
+                                finished = true,
+                                message = summary
+                            )
+                            _events.emit(summary)
+                            return@launch
+                        }
+                        val waitSeconds = (e.retryAfterMs / 1000).coerceAtLeast(5)
+                        _scrapeState.value = _scrapeState.value?.copy(
+                            message = "豆瓣限流，等待 $waitSeconds 秒后重试…"
                         )
-                        _events.emit("刮削中止：豆瓣刮削失败，请检查电视网络")
-                        return@launch
+                        _events.emit("豆瓣限流，暂停 $waitSeconds 秒")
+                        kotlinx.coroutines.delay(e.retryAfterMs)
+                    } catch (e: Exception) {
+                        failed++
+                        android.util.Log.w("JuyingScrape", "刮削失败 ${item.displayTitle}: ${e.message}")
+                        break
                     }
                 }
-                kotlinx.coroutines.delay(3000)
+
+                if (emptyStreak >= 4) {
+                    val stillHealthy = runCatching { graph.scrape.canary() }.getOrElse { false }
+                    if (!stillHealthy) {
+                        _scrapeState.value = _scrapeState.value?.copy(
+                            message = "豆瓣返回空结果，暂停 60 秒检查…"
+                        )
+                        kotlinx.coroutines.delay(60_000)
+                        val retryHealthy = runCatching { graph.scrape.canary() }.getOrElse { false }
+                        if (!retryHealthy) {
+                            val summary = "刮削暂停：豆瓣匿名接口被限流。已匹配 $matched 部，稍后可继续或使用“测试刮削源”检查。"
+                            _scrapeState.value = ScrapeUiState(
+                                running = false,
+                                total = targets.size,
+                                index = index + 1,
+                                matched = matched,
+                                failed = failed,
+                                finished = true,
+                                message = summary
+                            )
+                            _events.emit(summary)
+                            return@launch
+                        }
+                    }
+                    emptyStreak = 0
+                }
+                kotlinx.coroutines.delay(200)
             }
+
             if (scrapeMergeDuplicates.value) {
                 runCatching { repo.mergeScrapedDuplicates() }
             }
@@ -447,9 +510,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 runCatching { repo.ensureYearCollections() }
             }
             val summary = if (matched == 0) {
-                "刮削完成：匹配 0 部。可能没有对应豆瓣条目，或匿名接口被限流；可用“测试豆瓣连接”检查。"
+                "刮削完成：匹配 0 部，跳过 $skipped 部。可能没有对应条目，或接口被限流；可用“测试刮削源”检查。"
             } else {
-                "刮削完成：匹配 $matched 部，跳过 ${targets.size - matched} 部"
+                "刮削完成：匹配 $matched 部，跳过 $skipped 部" +
+                    if (failed > 0) "，失败 $failed 部" else ""
             }
             _scrapeState.value = ScrapeUiState(
                 running = false,
@@ -464,6 +528,46 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun scrapeSeries(seriesId: String) {
+        if (scrapeJob?.isActive == true) {
+            _events.tryEmit("正在刮削，请稍候")
+            return
+        }
+        scrapeJob = viewModelScope.launch {
+            val target = series.value.firstOrNull { it.id == seriesId }
+            if (target == null) {
+                _events.emit("剧集不存在")
+                return@launch
+            }
+            _events.emit("正在刮削「${target.displayTitle}」…")
+            try {
+                val best = graph.scrape.findMatch(target, force = true)
+                if (best == null) {
+                    _events.emit("没有找到可靠匹配，保留原标题与封面")
+                    return@launch
+                }
+                val posterRef = if (target.coverUrl.isNullOrBlank() && !best.posterUrl.isNullOrBlank()) {
+                    cachePoster(best)
+                } else {
+                    best.posterUrl
+                }
+                repo.applyScrape(target, best.copy(posterUrl = posterRef ?: best.posterUrl))
+                val source = if (best.provider == "tvmaze") "TVmaze" else "豆瓣"
+                _events.emit(
+                    "已匹配（$source）：${best.title}" +
+                        (best.year?.let { "（$it）" } ?: "") +
+                        " · 分数 ${best.score}"
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ScrapeRateLimitedException) {
+                _events.emit("刮削限流：${e.message ?: "请稍后再试"}")
+            } catch (e: Exception) {
+                _events.emit("刮削失败：${e.message ?: "未知错误"}")
+            }
+        }
+    }
+
     fun cancelScrape() {
         scrapeJob?.cancel()
         scrapeJob = null
@@ -474,30 +578,32 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _scrapeState.value = null
     }
 
-    private suspend fun cachePoster(url: String): String? {
-        val bytes = graph.douban.downloadPoster(url) ?: return null
+    private suspend fun cachePoster(candidate: ScrapeCandidate): String? {
+        val bytes = graph.scrape.downloadPoster(candidate) ?: return null
         return runCatching {
             val directory = File(getApplication<Application>().filesDir, "covers").apply { mkdirs() }
-            val file = File(directory, sha256(url).take(32) + ".jpg")
+            val ext = if (candidate.posterUrl?.contains(".png", true) == true) "png" else "jpg"
+            val file = File(directory, sha256(candidate.posterUrl ?: candidate.externalId).take(32) + ".$ext")
             file.writeBytes(bytes)
             file.toUri().toString()
         }.getOrNull()
     }
 
-    fun testScrapeConnection() {
+    fun testScrapeSources() {
         viewModelScope.launch {
-            try {
-                val candidates = graph.douban.search("西游记")
-                val first = candidates.firstOrNull()
-                _events.emit(
-                    if (candidates.isEmpty()) "豆瓣连接成功，但“西游记”返回 0 条"
-                    else "豆瓣连接成功：${candidates.size} 条，首条 ${first?.title} (${first?.year ?: "未知年份"})"
-                )
-            } catch (e: Exception) {
-                _events.emit("豆瓣连接失败：${e.message ?: "未知错误"}")
+            val results = runCatching { graph.scrape.testSources() }.getOrElse { e ->
+                _events.emit("刮削源测试失败：${e.message ?: "未知错误"}")
+                return@launch
             }
+            val text = results.joinToString("；") { result ->
+                val name = if (result.provider == "tvmaze") "TVmaze" else "豆瓣"
+                if (result.ok) "$name 成功 ${result.count} 条" else "$name 失败：${result.detail}"
+            }
+            _events.emit(text)
         }
     }
+
+    fun testScrapeConnection() = testScrapeSources()
 
     fun setScrapeMergeDuplicates(enabled: Boolean) {
         viewModelScope.launch { settings.setScrapeMergeDuplicates(enabled) }
