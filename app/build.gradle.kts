@@ -12,7 +12,7 @@ android {
         applicationId = "com.juying.tv"
         minSdk = 28
         targetSdk = 34
-        versionCode = 12
+        versionCode = 14
         versionName = "1.1.9"
         vectorDrawables.useSupportLibrary = true
         ndk {
