@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
@@ -40,6 +41,17 @@ data class ScrapeUiState(
     val total: Int = 0,
     val matched: Int = 0,
     val failed: Int = 0,
+    val finished: Boolean = false,
+    val message: String? = null
+)
+
+data class AiUiState(
+    val running: Boolean = false,
+    val currentTitle: String = "",
+    val index: Int = 0,
+    val total: Int = 0,
+    val applied: Int = 0,
+    val covers: Int = 0,
     val finished: Boolean = false,
     val message: String? = null
 )
@@ -67,11 +79,15 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _scrapeState = MutableStateFlow<ScrapeUiState?>(null)
     val scrapeState: StateFlow<ScrapeUiState?> = _scrapeState.asStateFlow()
 
+    private val _aiState = MutableStateFlow<AiUiState?>(null)
+    val aiState: StateFlow<AiUiState?> = _aiState.asStateFlow()
+
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val events = _events.asSharedFlow()
 
     private var scanJob: Job? = null
     private var scrapeJob: Job? = null
+    private var aiJob: Job? = null
 
     val sources = repo.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val series = repo.visibleSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -91,6 +107,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     val scrapeYearCollections = settings.scrapeYearCollections
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val aiKeyConfigured = settings.aiApiKey.map { it.isNotBlank() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val aiKeyLength = settings.aiApiKey.map { it.length }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val aiModel = settings.aiModel
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "qwen-plus")
 
     val continueWatching = kidsMode.flatMapLatest { kids ->
         repo.continueWatching(kids)
@@ -609,6 +631,204 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun testScrapeConnection() = testScrapeSources()
+
+    fun setAiKey(key: String) {
+        viewModelScope.launch {
+            settings.setAiApiKey(key)
+            _events.emit(if (key.isBlank()) "已清除百炼 API Key" else "百炼 API Key 已保存")
+        }
+    }
+
+    fun clearAiKey() = setAiKey("")
+
+    fun setAiModel(model: String) {
+        viewModelScope.launch {
+            settings.setAiModel(model)
+            _events.emit("AI 模型已切换为 $model")
+        }
+    }
+
+    fun testAi() {
+        viewModelScope.launch {
+            if (!hasAiKey()) {
+                _events.emit("请先在设置中填写百炼 API Key")
+                return@launch
+            }
+            _events.emit("正在测试百炼连接…")
+            runCatching { graph.bailian.test() }
+                .onSuccess { _events.emit("百炼连接成功：$it") }
+                .onFailure { _events.emit("百炼连接失败：${it.message ?: "未知错误"}") }
+        }
+    }
+
+    fun aiOrganizeSeries(seriesId: String) {
+        if (aiJob?.isActive == true) {
+            _events.tryEmit("AI 正在整理，请稍候")
+            return
+        }
+        if (scrapeJob?.isActive == true) {
+            _events.tryEmit("正在刮削，请稍后再试")
+            return
+        }
+        aiJob = viewModelScope.launch {
+            if (!hasAiKey()) {
+                _events.emit("请先在设置中填写百炼 API Key")
+                return@launch
+            }
+            val target = series.value.firstOrNull { it.id == seriesId }
+            if (target == null) {
+                _events.emit("剧集不存在")
+                return@launch
+            }
+            _aiState.value = AiUiState(running = true, currentTitle = target.displayTitle, index = 1, total = 1)
+            _events.emit("AI 正在整理「${target.displayTitle}」…")
+            try {
+                val result = graph.aiAgent.organizeSeries(target)
+                _aiState.value = AiUiState(
+                    running = false,
+                    currentTitle = target.displayTitle,
+                    index = 1,
+                    total = 1,
+                    applied = if (result.episodes > 0) 1 else 0,
+                    covers = if (result.coverApplied) 1 else 0,
+                    finished = true,
+                    message = result.message
+                )
+                _events.emit(result.message)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("JuyingAi", "AI 整理失败: ${e.message}")
+                _aiState.value = AiUiState(
+                    running = false,
+                    currentTitle = target.displayTitle,
+                    index = 1,
+                    total = 1,
+                    finished = true,
+                    message = "AI 整理失败：${e.message ?: "未知错误"}"
+                )
+                _events.emit("AI 整理失败：${e.message ?: "未知错误"}")
+            }
+        }
+    }
+
+    fun aiOrganizeAll(findCovers: Boolean = true) {
+        if (aiJob?.isActive == true) return
+        if (scrapeJob?.isActive == true) {
+            _events.tryEmit("正在刮削，请稍后再试")
+            return
+        }
+        aiJob = viewModelScope.launch {
+            if (!hasAiKey()) {
+                _events.emit("请先在设置中填写百炼 API Key")
+                return@launch
+            }
+            val targets = series.value
+            if (targets.isEmpty()) {
+                _events.emit("媒体库为空")
+                return@launch
+            }
+            var applied = 0
+            var covers = 0
+            var failed = 0
+            _aiState.value = AiUiState(running = true, total = targets.size)
+            _events.emit("AI 开始整理 ${targets.size} 部内容，可能产生模型费用")
+            for ((index, item) in targets.withIndex()) {
+                _aiState.value = _aiState.value?.copy(
+                    running = true,
+                    currentTitle = item.displayTitle,
+                    index = index + 1,
+                    total = targets.size,
+                    applied = applied,
+                    covers = covers
+                )
+                try {
+                    val result = graph.aiAgent.organizeSeries(item, findCovers)
+                    if (result.episodes > 0) applied++
+                    if (result.coverApplied) covers++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failed++
+                    android.util.Log.w("JuyingAi", "AI 整理失败 ${item.displayTitle}: ${e.message}")
+                }
+                kotlinx.coroutines.delay(250)
+            }
+            val summary = "AI 整理完成：成功 $applied 部，封面 $covers 部" +
+                if (failed > 0) "，失败 $failed 部" else ""
+            _aiState.value = AiUiState(
+                running = false,
+                total = targets.size,
+                index = targets.size,
+                applied = applied,
+                covers = covers,
+                finished = true,
+                message = summary
+            )
+            _events.emit(summary)
+        }
+    }
+
+    fun aiFillCovers() {
+        if (aiJob?.isActive == true) return
+        aiJob = viewModelScope.launch {
+            if (!hasAiKey()) {
+                _events.emit("请先在设置中填写百炼 API Key")
+                return@launch
+            }
+            val targets = series.value.filter { it.coverUrl.isNullOrBlank() }
+            if (targets.isEmpty()) {
+                _events.emit("没有缺少封面的内容")
+                return@launch
+            }
+            var covers = 0
+            _aiState.value = AiUiState(running = true, total = targets.size)
+            for ((index, item) in targets.withIndex()) {
+                _aiState.value = _aiState.value?.copy(
+                    running = true,
+                    currentTitle = item.displayTitle,
+                    index = index + 1,
+                    total = targets.size,
+                    covers = covers
+                )
+                try {
+                    if (graph.aiAgent.fillCover(item) != null) covers++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    android.util.Log.w("JuyingAi", "AI 封面失败 ${item.displayTitle}: ${e.message}")
+                }
+                kotlinx.coroutines.delay(250)
+            }
+            val summary = "AI 封面完成：成功 $covers / ${targets.size} 部"
+            _aiState.value = AiUiState(
+                running = false,
+                total = targets.size,
+                index = targets.size,
+                covers = covers,
+                finished = true,
+                message = summary
+            )
+            _events.emit(summary)
+        }
+    }
+
+    fun cancelAi() {
+        val current = _aiState.value
+        aiJob?.cancel()
+        aiJob = null
+        _aiState.value = (current ?: AiUiState()).copy(
+            running = false,
+            finished = true,
+            message = "已取消 AI 整理"
+        )
+    }
+
+    fun dismissAiBanner() {
+        _aiState.value = null
+    }
+
+    private suspend fun hasAiKey(): Boolean = settings.aiApiKey.first().isNotBlank()
 
     fun setScrapeMergeDuplicates(enabled: Boolean) {
         viewModelScope.launch { settings.setScrapeMergeDuplicates(enabled) }

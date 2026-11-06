@@ -49,16 +49,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.list.TvLazyColumn
+import com.juying.tv.AiUiState
 import com.juying.tv.AppViewModel
 import com.juying.tv.BuildConfig
 import com.juying.tv.ui.components.Badge
 import com.juying.tv.ui.components.ConfirmDialog
+import com.juying.tv.ui.components.PhoneAssistDialog
 import com.juying.tv.ui.components.PinDialogBody
 import com.juying.tv.ui.components.SetPinDialog
 import com.juying.tv.ui.components.ProgressLine
 import com.juying.tv.ui.components.SettingRow
+import com.juying.tv.ui.components.TvButton
+import com.juying.tv.ui.components.TvDialog
 import com.juying.tv.ui.components.TogglePill
 import com.juying.tv.ui.theme.JuyingColors
+import com.juying.tv.ui.util.PhoneField
 import com.juying.tv.util.localIpv4Address
 import kotlinx.coroutines.delay
 
@@ -80,11 +85,22 @@ fun SettingsScreen(
     val scrapeMeta by viewModel.scrapeMeta.collectAsStateWithLifecycle()
     val mergeDuplicates by viewModel.scrapeMergeDuplicates.collectAsStateWithLifecycle()
     val yearCollections by viewModel.scrapeYearCollections.collectAsStateWithLifecycle()
+    val aiState by viewModel.aiState.collectAsStateWithLifecycle()
+    val aiKeyConfigured by viewModel.aiKeyConfigured.collectAsStateWithLifecycle()
+    val aiKeyLength by viewModel.aiKeyLength.collectAsStateWithLifecycle()
+    val aiModel by viewModel.aiModel.collectAsStateWithLifecycle()
 
     var showSetPin by remember { mutableStateOf(false) }
     var showVerifyForChange by remember { mutableStateOf(false) }
     var showClearPin by remember { mutableStateOf(false) }
     var showEnableKids by remember { mutableStateOf(false) }
+    var showAiKey by remember { mutableStateOf(false) }
+    var showAiPhone by remember { mutableStateOf(false) }
+    var showAiModel by remember { mutableStateOf(false) }
+    var showAiBatch by remember { mutableStateOf(false) }
+    var showAiCover by remember { mutableStateOf(false) }
+    val aiDialogFocus = remember { FocusRequester() }
+    val aiModelFocus = remember { FocusRequester() }
     val firstFocus = remember { FocusRequester() }
     RegisterScreenFocus(firstFocus)
     val ip = remember { localIpv4Address() ?: "未连接局域网" }
@@ -289,6 +305,88 @@ fun SettingsScreen(
                 )
             }
         }
+        item { SectionLabel("AI 智能整理（阿里云百炼）") }
+        aiState?.let { state ->
+            item {
+                AiProgressCard(
+                    state = state,
+                    onCancel = { viewModel.cancelAi() },
+                    onDismiss = { viewModel.dismissAiBanner() }
+                )
+            }
+        }
+        item {
+            SettingRow(
+                title = "百炼 API Key",
+                subtitle = if (aiKeyConfigured) {
+                    "已填写 · $aiKeyLength 个字符，仅保存在电视本机"
+                } else {
+                    "填写后可用大模型规范文件名、季集和封面"
+                },
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = { if (aiKeyConfigured) showAiKey = true else showAiPhone = true },
+                trailing = {
+                    Badge(if (aiKeyConfigured) "已设置" else "未设置", if (aiKeyConfigured) JuyingColors.Green else JuyingColors.TextSecondary)
+                }
+            )
+        }
+        item {
+            SettingRow(
+                title = "AI 模型",
+                subtitle = "默认 qwen-plus；整理季集/标题，联网搜索用于找封面",
+                icon = Icons.Rounded.Cloud,
+                onClick = { showAiModel = true },
+                trailing = { Text(aiModel, color = JuyingColors.Gold, style = MaterialTheme.typography.bodySmall) }
+            )
+        }
+        item {
+            SettingRow(
+                title = "测试 AI 连接",
+                subtitle = "发送一条最小请求，不修改媒体库",
+                icon = Icons.Rounded.Cloud,
+                onClick = { viewModel.testAi() }
+            )
+        }
+        item {
+            SettingRow(
+                title = "AI 整理全部剧集",
+                subtitle = "模型读取文件名和目录，重新整理季/集/标题；可能产生费用",
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = {
+                    if (!aiKeyConfigured) viewModel.notify("请先填写百炼 API Key")
+                    else if (aiState?.running == true) viewModel.notify("AI 正在整理中")
+                    else showAiBatch = true
+                }
+            )
+        }
+        item {
+            SettingRow(
+                title = "AI 补齐缺失封面",
+                subtitle = "用百炼联网搜索为没有封面的内容找官方海报，建议家长抽查",
+                icon = Icons.Rounded.AutoAwesome,
+                onClick = {
+                    if (!aiKeyConfigured) viewModel.notify("请先填写百炼 API Key")
+                    else if (aiState?.running == true) viewModel.notify("AI 正在整理中")
+                    else showAiCover = true
+                }
+            )
+        }
+        item {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(JuyingColors.Surface.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+                    .padding(18.dp)
+            ) {
+                Text(
+                    "AI 会读取片名、文件名和所在目录，并发送给阿里云百炼；Key 仅保存在电视本机。" +
+                        "整理结果会直接写入媒体库，联网找图可能包含第三方图片，建议家长抽查；调用模型可能产生费用。",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 20.sp
+                )
+            }
+        }
         item { SectionLabel("手机辅助填写与隐私") }
         item {
             Box(
@@ -357,6 +455,129 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showAiPhone) {
+        PhoneAssistDialog(
+            title = "填写百炼 API Key",
+            fields = listOf(
+                PhoneField(
+                    key = "key",
+                    label = "阿里云百炼 API Key",
+                    placeholder = "sk-...",
+                    password = true,
+                    hint = "在阿里云百炼控制台创建 API Key。Key 只保存在电视本机，不会上传到其他服务。"
+                )
+            ),
+            onDismiss = { showAiPhone = false },
+            onResult = { values ->
+                viewModel.setAiKey(values["key"].orEmpty())
+                showAiPhone = false
+            }
+        )
+    }
+
+    if (showAiKey) {
+        TvDialog(
+            onDismiss = { showAiKey = false },
+            modifier = Modifier.width(680.dp)
+        ) {
+            Text(
+                "百炼 API Key",
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "已填写 · $aiKeyLength 个字符。Key 仅保存在电视本机，不会上传到其他服务。",
+                color = JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(22.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)
+            ) {
+                TvButton("清除", {
+                    viewModel.clearAiKey()
+                    showAiKey = false
+                }, primary = false)
+                TvButton("更换 Key", {
+                    showAiKey = false
+                    showAiPhone = true
+                }, focusRequester = aiDialogFocus)
+            }
+            LaunchedEffect(Unit) {
+                delay(120)
+                runCatching { aiDialogFocus.requestFocus() }
+            }
+        }
+    }
+
+    if (showAiModel) {
+        TvDialog(
+            onDismiss = { showAiModel = false },
+            modifier = Modifier.width(720.dp)
+        ) {
+            Text(
+                "AI 模型",
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "qwen-plus 性价比高；qwen-max 更准确但费用更高；qwen-turbo 更快。",
+                color = JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf("qwen-plus", "qwen-max", "qwen-turbo").forEachIndexed { index, model ->
+                    TvChip(
+                        model,
+                        selected = aiModel == model,
+                        onClick = {
+                            viewModel.setAiModel(model)
+                            showAiModel = false
+                        },
+                        focusRequester = if (index == 0) aiModelFocus else null
+                    )
+                }
+            }
+            LaunchedEffect(Unit) {
+                delay(120)
+                runCatching { aiModelFocus.requestFocus() }
+            }
+        }
+    }
+
+    if (showAiBatch) {
+        ConfirmDialog(
+            title = "AI 整理全部剧集",
+            message = "将调用百炼模型处理 ${series.size} 部内容，重新整理季/集/标题，并为缺失封面找图，可能产生费用。建议先在一个剧集上试用。确定继续吗？",
+            confirmText = "开始整理",
+            onConfirm = {
+                showAiBatch = false
+                viewModel.aiOrganizeAll(true)
+            },
+            onDismiss = { showAiBatch = false }
+        )
+    }
+
+    if (showAiCover) {
+        val missing = series.count { it.coverUrl.isNullOrBlank() }
+        ConfirmDialog(
+            title = "AI 补齐缺失封面",
+            message = "当前有 $missing 部内容缺少封面。将调用百炼联网搜索并下载图片，建议家长抽查结果。确定继续吗？",
+            confirmText = "开始找图",
+            onConfirm = {
+                showAiCover = false
+                viewModel.aiFillCovers()
+            },
+            onDismiss = { showAiCover = false }
+        )
     }
 
     if (showSetPin) {
@@ -452,6 +673,50 @@ private fun ScrapeProgressCard(
         Spacer(Modifier.width(14.dp))
         if (state.running) TvChip("取消", onClick = onCancel)
         else TvChip("关闭", onClick = onDismiss)
+    }
+}
+
+@Composable
+private fun AiProgressCard(
+    state: AiUiState,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val fraction = if (state.total > 0) state.index.toFloat() / state.total else 0f
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(JuyingColors.Gold.copy(alpha = 0.08f))
+            .border(1.dp, JuyingColors.Gold.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (state.running) "AI 整理中 ${state.index}/${state.total}" else (state.message ?: "AI 整理结束"),
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.titleMedium
+            )
+            if (state.running) {
+                Text(
+                    state.currentTitle,
+                    color = JuyingColors.TextSecondary,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(7.dp))
+                ProgressLine(fraction, Modifier.fillMaxWidth())
+            }
+            Text(
+                "成功 ${state.applied} 部 · 封面 ${state.covers} 部",
+                color = JuyingColors.TextMuted,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Spacer(Modifier.width(14.dp))
+        if (state.running) TvChip("取消", onClick = onCancel) else TvChip("关闭", onClick = onDismiss)
     }
 }
 

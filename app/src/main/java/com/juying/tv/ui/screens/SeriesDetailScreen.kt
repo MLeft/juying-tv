@@ -169,6 +169,16 @@ fun SeriesDetailScreen(
             Spacer(Modifier.weight(1f))
             if (!kidsMode) {
                 TvChip(
+                    "AI 整理",
+                    onClick = { viewModel.aiOrganizeSeries(seriesId) },
+                    icon = Icons.Rounded.AutoAwesome,
+                    modifier = Modifier.focusProperties {
+                        up = FocusRequester.Cancel
+                        down = playFocus
+                    }
+                )
+                Spacer(Modifier.width(8.dp))
+                TvChip(
                     "刮削",
                     onClick = { viewModel.scrapeSeries(seriesId) },
                     icon = Icons.Rounded.AutoAwesome,

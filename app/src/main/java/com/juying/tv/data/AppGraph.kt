@@ -5,6 +5,8 @@ import com.juying.tv.data.db.AppDatabase
 import com.juying.tv.data.prefs.SettingsStore
 import com.juying.tv.data.repo.LibraryRepository
 import com.juying.tv.data.repo.PlaybackResolver
+import com.juying.tv.data.ai.AiAgent
+import com.juying.tv.data.ai.BailianClient
 import com.juying.tv.data.scrape.DoubanClient
 import com.juying.tv.data.scrape.ScrapeService
 import com.juying.tv.data.scrape.TmdbClient
@@ -35,7 +37,9 @@ class AppGraph(context: Context) {
     val tvmaze = TvmazeClient(okHttp)
     val tmdb = TmdbClient(okHttp)
     val scrape = ScrapeService(appContext, douban, tvmaze, tmdb)
+    val bailian = BailianClient(okHttp, settings)
     val scanner = SourceScanner(appContext, webDav, quark)
     val repository = LibraryRepository(appContext, database, scanner)
+    val aiAgent = AiAgent(appContext, database, repository, bailian)
     val playbackResolver = PlaybackResolver(appContext, database, webDav, quark)
 }

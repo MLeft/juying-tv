@@ -333,6 +333,50 @@ class LibraryRepository(
         }
     }
 
+    /** 应用大模型整理结果：按序号/file 对应到原文件，更新季/集/标题/排序，可选更新封面。 */
+    suspend fun applyAiPlan(
+        series: SeriesEntity,
+        plan: com.juying.tv.data.ai.AiSeriesPlan,
+        coverUri: String? = null
+    ): Int {
+        val media = database.mediaDao().allBySeries(series.id)
+        if (media.isEmpty()) return 0
+        val byFile = media.associateBy { it.fileName }
+        val updates = ArrayList<MediaEntity>(plan.episodes.size)
+        plan.episodes.forEachIndexed { index, episode ->
+            val target = if (episode.index in 1..media.size) {
+                media[episode.index - 1]
+            } else {
+                episode.file?.let { byFile[it] }
+            } ?: return@forEachIndexed
+            updates += target.copy(
+                season = episode.season,
+                episode = episode.episode,
+                title = episode.title.ifBlank { target.title },
+                sortIndex = index,
+                updatedAt = System.currentTimeMillis()
+            )
+        }
+        if (updates.isEmpty()) return 0
+        database.withTransaction {
+            database.mediaDao().upsertAll(updates)
+            database.seriesDao().upsert(
+                series.copy(
+                    customTitle = plan.seriesTitle?.takeIf { it.isNotBlank() } ?: series.customTitle,
+                    coverUrl = coverUri ?: series.coverUrl,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+        }
+        return updates.size
+    }
+
+    suspend fun applyAiCover(series: SeriesEntity, coverUri: String) {
+        database.seriesDao().upsert(
+            series.copy(coverUrl = coverUri, updatedAt = System.currentTimeMillis())
+        )
+    }
+
     suspend fun mergeScrapedDuplicates() {
         val metas = database.scrapeMetaDao().observeAll().first()
         val groups = metas.groupBy { it.provider to it.externalId }.filterValues { it.size > 1 }

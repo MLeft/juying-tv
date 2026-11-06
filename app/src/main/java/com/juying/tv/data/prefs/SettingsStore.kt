@@ -22,6 +22,8 @@ class SettingsStore(private val context: Context) {
         val showPhoneAssistOnLaunch = booleanPreferencesKey("phone_assist_hint")
         val scrapeMergeDuplicates = booleanPreferencesKey("scrape_merge_duplicates")
         val scrapeYearCollections = booleanPreferencesKey("scrape_year_collections")
+        val aiApiKey = stringPreferencesKey("ai_api_key")
+        val aiModel = stringPreferencesKey("ai_model")
     }
 
     val kidsMode: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.kidsMode] ?: false }
@@ -30,6 +32,8 @@ class SettingsStore(private val context: Context) {
     val resumePlayback: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.resumePlayback] ?: true }
     val scrapeMergeDuplicates: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.scrapeMergeDuplicates] ?: true }
     val scrapeYearCollections: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.scrapeYearCollections] ?: false }
+    val aiApiKey: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiApiKey].orEmpty() }
+    val aiModel: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiModel] ?: "qwen-plus" }
 
     suspend fun setKidsMode(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.kidsMode] = enabled }
@@ -49,6 +53,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setScrapeYearCollections(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.scrapeYearCollections] = enabled }
+    }
+
+    suspend fun setAiApiKey(key: String) {
+        context.settingsDataStore.edit { it[Keys.aiApiKey] = key.trim() }
+    }
+
+    suspend fun setAiModel(model: String) {
+        context.settingsDataStore.edit { it[Keys.aiModel] = model.trim() }
     }
 
     suspend fun setPin(pin: String) {
