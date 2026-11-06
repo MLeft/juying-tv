@@ -53,7 +53,8 @@ class AiAgent(
         var mergedTitle: String? = null
         chunks.forEachIndexed { chunkIndex, chunk ->
             onStage("正在整理第 ${chunkIndex + 1}/${chunks.size} 批（${chunk.size} 集）…")
-            val chunkPlan = ai.normalize(series.displayTitle, series.year, chunk)
+            Log.i("JuyingAi", "原始目录：${series.remotePath}")
+            val chunkPlan = ai.normalize(series.displayTitle, series.year, chunk, series.remotePath)
                 ?: return AiApplyResult(
                     "AI 第 ${chunkIndex + 1}/${chunks.size} 批没有返回可解析结果",
                     0,
@@ -67,8 +68,14 @@ class AiAgent(
             }
             if (chunkIndex < chunks.lastIndex) kotlinx.coroutines.delay(300)
         }
-        val plan = AiSeriesPlan(mergedTitle, mergedEpisodes)
-        Log.i("JuyingAi", "分块整理：${chunks.size} 批，合计 ${plan.episodes.size} 集")
+        val improvedTitle = improveSeriesTitle(
+            mergedTitle,
+            series.displayTitle,
+            series.remotePath,
+            files
+        )
+        val plan = AiSeriesPlan(improvedTitle, mergedEpisodes)
+        Log.i("JuyingAi", "分块整理：${chunks.size} 批，合计 ${plan.episodes.size} 集，标题=$improvedTitle")
         if (media.size >= 5 && plan.episodes.size < media.size / 3) {
             return AiApplyResult("AI 返回的集数过少（${plan.episodes.size}/${media.size}），已放弃应用", 0, false)
         }
@@ -113,7 +120,7 @@ class AiAgent(
         val applied = repository.applyAiPlan(series, sanitized, coverUri)
         if (applied == 0) return AiApplyResult("AI 结果与文件不匹配，未修改", 0, false)
 
-        val name = plan.seriesTitle ?: series.displayTitle
+        val name = sanitized.seriesTitle ?: series.displayTitle
         val coverText = if (coverUri != null) "，已更新封面" else ""
         return AiApplyResult(
             "AI 已整理「$name」：$applied 集$coverText",
@@ -123,6 +130,63 @@ class AiAgent(
     }
 
     suspend fun fillCover(series: SeriesEntity): String? = downloadCover(series)
+
+    private fun improveSeriesTitle(
+        aiTitle: String?,
+        currentTitle: String,
+        remotePath: String,
+        files: List<AiFile>
+    ): String? {
+        val title = aiTitle?.trim().orEmpty()
+        if (title.isBlank()) return null
+        val genericMarkers = listOf(
+            "引进版", "完整版", "中英", "英文", "中文", "双语",
+            "视频", "音频", "课程", "合集", "全集"
+        )
+        val looksGeneric = genericMarkers.any { title.contains(it) } ||
+            Regex("第\\s*\\d+\\s*[-~至到]?\\s*\\d*\\s*级").containsMatchIn(title)
+        if (!looksGeneric) return title
+        val brand = findBrand(remotePath, files) ?: return title
+        if (title.contains(brand, ignoreCase = true)) return title
+        return "$brand · $title".take(80)
+    }
+
+    /** 从分组目录/文件目录里找作品品牌名，避免标题只剩“引进版/第x级/中英”。 */
+    private fun findBrand(remotePath: String, files: List<AiFile>): String? {
+        val genericWords = setOf(
+            "english", "video", "audio", "unit", "units", "level", "levels",
+            "course", "lesson", "lessons", "mp4", "mkv", "avi", "mov",
+            "引进版", "完整版", "中英", "英文", "中文", "双语", "视频", "音频"
+        )
+        fun latinWords(value: String): List<String> =
+            value.split(Regex("[^A-Za-z]+"))
+                .map { it.trim() }
+                .filter { it.length >= 2 && it.lowercase() !in genericWords }
+
+        val pathSegments = (remotePath.split('/') + files.flatMap { it.folder.split('/') })
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        for (segment in pathSegments) {
+            val words = latinWords(segment)
+            if (words.size >= 2) {
+                // 目录名通常是完整品牌，如 Wow English / Super Simple Songs。
+                return words.take(4).joinToString(" ")
+            }
+        }
+        // 目录没有品牌时，尝试文件名共同前缀。
+        val samples = files.take(30).map { latinWords(it.name.substringBeforeLast('.')) }
+            .filter { it.isNotEmpty() }
+        if (samples.size < 2) return null
+        val common = ArrayList<String>()
+        val limit = samples.minOf { it.size }
+        for (i in 0 until limit) {
+            val word = samples.first()[i]
+            if (samples.all { it.getOrNull(i)?.equals(word, ignoreCase = true) == true }) {
+                common += word
+            } else break
+        }
+        return common.takeIf { it.size >= 2 }?.take(4)?.joinToString(" ")
+    }
 
     private fun cleanFileStem(fileName: String): String {
         if (fileName.isBlank()) return ""

@@ -123,7 +123,8 @@ class AiClient(
     suspend fun normalize(
         seriesTitle: String,
         year: Int?,
-        files: List<AiFile>
+        files: List<AiFile>,
+        remotePath: String? = null
     ): AiSeriesPlan? = withContext(Dispatchers.IO) {
         if (files.isEmpty()) return@withContext null
         val cfg = currentConfig()
@@ -132,7 +133,8 @@ class AiClient(
         }.joinToString("\n")
         val prompt = buildString {
             appendLine("你是儿童动画媒体库整理助手。只输出 JSON，不要 markdown、不要解释。")
-            appendLine("剧集名称：$seriesTitle")
+            appendLine("当前名称（可能不规范，仅供参考）：$seriesTitle")
+            remotePath?.takeIf { it.isNotBlank() }?.let { appendLine("原始目录/分组路径：$it") }
             year?.let { appendLine("年份：$it") }
             appendLine("文件列表（序号. 文件名 | 所在目录）：")
             appendLine(list)
@@ -140,11 +142,15 @@ class AiClient(
             appendLine("请输出：")
             appendLine("""{"series_title":"规范后的剧集名","episodes":[{"index":1,"season":1,"episode":1,"title":"适合儿童看的单集标题"}]}""")
             appendLine("规则：")
-            appendLine("1. index 必须来自上面的序号，每个文件最多一次，不要编造文件。")
-            appendLine("2. season/episode 从文件名和目录推断；课程级别当作季；无法判断时按列表顺序编号。")
-            appendLine("3. title 只做文件名清洗：去掉扩展名、开头编号、清晰度、语言标签和集数后缀，保留文件名里有意义的词；不要根据剧情编造标题。")
+            appendLine("1. series_title 必须是完整作品名，优先保留或恢复品牌名（如 Wow English、Super Simple Songs、Numberblocks 等）。")
+            appendLine("2. 如果当前名称只包含“引进版 / 完整版 / 第x级 / 中英 / 英文 / 双语 / 视频 / 音频”等课程属性，不要直接照抄；")
+            appendLine("   从目录和文件名中找作品名，输出“作品名 + 级别/语言”，例如“Wow English 引进版 1-2级 中英”。")
+            appendLine("3. 不要只改标点或空格；无法确定作品名时保留原标题，不要编造。")
+            appendLine("4. index 必须来自上面的序号，每个文件最多一次，不要编造文件。")
+            appendLine("5. season/episode 从文件名和目录推断；课程级别当作季；无法判断时按列表顺序编号。")
+            appendLine("6. title 只做文件名清洗：去掉扩展名、开头编号、清晰度、语言标签和集数后缀，保留文件名里有意义的词；不要根据剧情编造标题。")
             appendLine("   无法清洗出有意义内容时，直接输出清洗后的文件名。")
-            appendLine("4. 只整理文件，不要输出不存在的内容。")
+            appendLine("7. 只整理文件，不要输出不存在的内容。")
         }
         val result = chatStream(
             cfg,
