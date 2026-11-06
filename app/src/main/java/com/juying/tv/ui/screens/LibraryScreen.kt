@@ -1,5 +1,10 @@
 package com.juying.tv.ui.screens
 
+import android.view.KeyEvent as AndroidKeyEvent
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+
 import com.juying.tv.ui.RegisterScreenFocus
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -50,7 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.foundation.lazy.grid.TvGridCells
 import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.items
+import androidx.tv.foundation.lazy.grid.itemsIndexed
 import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
 import androidx.tv.foundation.lazy.list.TvLazyColumn
 import androidx.tv.foundation.lazy.list.items as listItems
@@ -379,7 +384,9 @@ private fun CollectionsContent(
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        items(collections, key = { it.id }) { collection ->
+        val collectionTotal = collections.size + 1
+        val lastCollectionRowStart = ((collectionTotal - 1) / 3) * 3
+        itemsIndexed(collections, key = { _, it -> it.id }) { index, collection ->
             val series = collectionItems
                 .filter { it.collectionId == collection.id }
                 .sortedBy { it.sortIndex }
@@ -387,13 +394,15 @@ private fun CollectionsContent(
             CollectionCard(
                 collection = collection,
                 series = series,
-                onClick = { onOpenCollection(collection.id) }
+                onClick = { onOpenCollection(collection.id) },
+                modifier = if (index >= lastCollectionRowStart) Modifier.blockDownAtBottom() else Modifier
             )
         }
         item(key = "create") {
             FocusableSurface(
                 onClick = onCreate,
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 8.4f),
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 8.4f)
+                    .then(if (collections.size >= lastCollectionRowStart) Modifier.blockDownAtBottom() else Modifier),
                 shape = RoundedCornerShape(20.dp),
                 focusedScale = 1.03f,
                 backgroundColor = JuyingColors.Surface.copy(alpha = 0.28f),
@@ -426,9 +435,10 @@ private fun CollectionsContent(
 private fun CollectionCard(
     collection: CollectionEntity,
     series: List<SeriesEntity>,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(Modifier.padding(vertical = 4.dp)) {
+    Column(modifier.padding(vertical = 4.dp)) {
         FocusableSurface(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 8.4f),
@@ -517,10 +527,12 @@ private fun AllSeriesGrid(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        items(series, key = { it.id }) { item ->
+        val lastSeriesRowStart = ((series.size - 1) / 6) * 6
+        itemsIndexed(series, key = { _, it -> it.id }) { index, item ->
             PosterCard(
                 series = item,
                 onClick = { onOpenSeries(item.id) },
+                modifier = if (index >= lastSeriesRowStart) Modifier.blockDownAtBottom() else Modifier,
                 focusRequester = if (item.id == series.firstOrNull()?.id) firstFocus else null
             )
         }
@@ -704,4 +716,10 @@ private fun ManageLinkRow(
             Text("›", color = JuyingColors.TextMuted, fontSize = 22.sp)
         }
     }
+}
+
+
+private fun Modifier.blockDownAtBottom(): Modifier = onPreviewKeyEvent { event ->
+    event.type == KeyEventType.KeyDown &&
+        event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
 }

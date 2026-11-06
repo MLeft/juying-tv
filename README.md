@@ -22,14 +22,14 @@
 APK 已生成：
 
 ```
-dist/JuyingTV-1.2.1.apk
+dist/JuyingTV-1.2.2.apk
 ```
 
 ### ADB 安装（推荐）
 
 ```bash
 adb connect 192.168.1.196:5555
-adb install -r dist/JuyingTV-1.2.1.apk
+adb install -r dist/JuyingTV-1.2.2.apk
 ```
 
 如果电视提示“禁止安装未知来源应用”，请在电视的开发者选项/安全设置中允许 ADB 安装。首次连接需要在电视上确认调试授权。
@@ -239,4 +239,4 @@ docs/screenshots/    实机界面截图
 
 ---
 
-版本：1.2.1 · 构建日期：2026-11-05
+版本：1.2.2 · 构建日期：2026-11-05

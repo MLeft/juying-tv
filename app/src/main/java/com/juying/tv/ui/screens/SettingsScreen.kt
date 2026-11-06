@@ -1,15 +1,20 @@
 package com.juying.tv.ui.screens
 
+import android.view.KeyEvent as AndroidKeyEvent
 import com.juying.tv.ui.RegisterScreenFocus
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import com.juying.tv.ui.components.TvChip
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,7 +53,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.list.TvLazyColumn
 import com.juying.tv.AiUiState
 import com.juying.tv.AppViewModel
 import com.juying.tv.BuildConfig
@@ -110,12 +114,14 @@ fun SettingsScreen(
         firstFocus.requestFocus()
     }
 
-    TvLazyColumn(
-        modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
-        contentPadding = PaddingValues(top = 20.dp, bottom = 36.dp),
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 32.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item {
+        SettingsItem {
             Column {
                 Text(
                     "设置",
@@ -130,8 +136,8 @@ fun SettingsScreen(
                 )
             }
         }
-        item { SectionLabel("家长与儿童") }
-        item {
+        SettingsItem { SectionLabel("家长与儿童") }
+        SettingsItem {
             SettingRow(
                 title = if (pinSet) "家长锁已启用" else "设置家长锁",
                 subtitle = if (pinSet) "进入儿童模式、修改允许内容时需要输入密码" else "建议先设置 4–6 位数字密码，防止孩子退出儿童模式",
@@ -148,7 +154,7 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "儿童模式内容管理",
                 subtitle = "按剧集、按集数选择孩子可以观看的内容，支持全选",
@@ -159,7 +165,7 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "进入儿童模式",
                 subtitle = if (kidsMode) "当前已处于儿童模式" else "隐藏设置与媒体源，只显示家长允许的内容",
@@ -180,7 +186,7 @@ fun SettingsScreen(
             )
         }
         if (pinSet) {
-            item {
+            SettingsItem {
                 SettingRow(
                     title = "关闭并清除家长锁",
                     subtitle = "会同时退出儿童模式并清空家长密码",
@@ -189,8 +195,8 @@ fun SettingsScreen(
                 )
             }
         }
-        item { SectionLabel("播放") }
-        item {
+        SettingsItem { SectionLabel("播放") }
+        SettingsItem {
             SettingRow(
                 title = "自动播放下一集",
                 subtitle = "剧集播放结束后自动进入下一集",
@@ -199,8 +205,8 @@ fun SettingsScreen(
                 trailing = { TogglePill(autoNext) }
             )
         }
-        item { SectionLabel("媒体库") }
-        item {
+        SettingsItem { SectionLabel("媒体库") }
+        SettingsItem {
             SettingRow(
                 title = "扫描全部媒体源",
                 subtitle = if (scanState?.running == true) "正在扫描 ${scanState?.sourceName} · ${scanState?.files ?: 0} 个文件" else "共 ${sources.size} 个媒体源 · ${series.size} 部内容",
@@ -208,7 +214,7 @@ fun SettingsScreen(
                 onClick = { viewModel.scanAll() }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "管理媒体源",
                 subtitle = "添加本地目录、U 盘、WebDAV 或夸克网盘",
@@ -216,7 +222,7 @@ fun SettingsScreen(
                 onClick = onOpenSources
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "已隐藏的内容",
                 subtitle = "恢复此前从媒体库隐藏的剧集",
@@ -224,9 +230,9 @@ fun SettingsScreen(
                 onClick = onOpenHidden
             )
         }
-        item { SectionLabel("刮削与自动整理") }
+        SettingsItem { SectionLabel("刮削与自动整理") }
         scrapeState?.let { state ->
-            item {
+            SettingsItem {
                 ScrapeProgressCard(
                     state = state,
                     onCancel = { viewModel.cancelScrape() },
@@ -234,7 +240,7 @@ fun SettingsScreen(
                 )
             }
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "开始刮削（多源）",
                 subtitle = if (scrapeState?.running == true) {
@@ -249,7 +255,7 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "重新刮削全部",
                 subtitle = "忽略已匹配记录，重新请求全部 ${series.size} 部内容",
@@ -260,7 +266,7 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "测试刮削源",
                 subtitle = "检查豆瓣、TVmaze 与 TMDB（api.tmdb.org）",
@@ -268,7 +274,7 @@ fun SettingsScreen(
                 onClick = { viewModel.testScrapeSources() }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "自动合并同作品重复条目",
                 subtitle = "刮削到同一条目时合并重复剧集；建议开启",
@@ -277,19 +283,16 @@ fun SettingsScreen(
                 trailing = { TogglePill(mergeDuplicates) }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "按年份自动建合集",
                 subtitle = "刮削匹配后，按首播年份建立“2024 年”等合集",
                 icon = Icons.Rounded.AutoAwesome,
-                modifier = Modifier.focusProperties {
-                    down = FocusRequester.Cancel
-                },
                 onClick = { viewModel.setScrapeYearCollections(!yearCollections) },
                 trailing = { TogglePill(yearCollections) }
             )
         }
-        item {
+        SettingsItem {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -305,9 +308,9 @@ fun SettingsScreen(
                 )
             }
         }
-        item { SectionLabel("AI 智能整理（阿里云百炼）") }
+        SettingsItem { SectionLabel("AI 智能整理（阿里云百炼）") }
         aiState?.let { state ->
-            item {
+            SettingsItem {
                 AiProgressCard(
                     state = state,
                     onCancel = { viewModel.cancelAi() },
@@ -315,7 +318,7 @@ fun SettingsScreen(
                 )
             }
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "百炼 API Key",
                 subtitle = if (aiKeyConfigured) {
@@ -330,7 +333,7 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "AI 模型",
                 subtitle = "默认 qwen-plus；整理季集/标题，联网搜索用于找封面",
@@ -339,7 +342,7 @@ fun SettingsScreen(
                 trailing = { Text(aiModel, color = JuyingColors.Gold, style = MaterialTheme.typography.bodySmall) }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "测试 AI 连接",
                 subtitle = "发送一条最小请求，不修改媒体库",
@@ -347,7 +350,7 @@ fun SettingsScreen(
                 onClick = { viewModel.testAi() }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "AI 整理全部剧集",
                 subtitle = "模型读取文件名和目录，重新整理季/集/标题；可能产生费用",
@@ -359,11 +362,15 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             SettingRow(
                 title = "AI 补齐缺失封面",
                 subtitle = "用百炼联网搜索为没有封面的内容找官方海报，建议家长抽查",
                 icon = Icons.Rounded.AutoAwesome,
+                modifier = Modifier.onPreviewKeyEvent { event ->
+                    event.type == KeyEventType.KeyDown &&
+                        event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                },
                 onClick = {
                     if (!aiKeyConfigured) viewModel.notify("请先填写百炼 API Key")
                     else if (aiState?.running == true) viewModel.notify("AI 正在整理中")
@@ -371,7 +378,7 @@ fun SettingsScreen(
                 }
             )
         }
-        item {
+        SettingsItem {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -387,8 +394,8 @@ fun SettingsScreen(
                 )
             }
         }
-        item { SectionLabel("手机辅助填写与隐私") }
-        item {
+        SettingsItem { SectionLabel("手机辅助填写与隐私") }
+        SettingsItem {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -420,8 +427,8 @@ fun SettingsScreen(
                 }
             }
         }
-        item { SectionLabel("关于") }
-        item {
+        SettingsItem { SectionLabel("关于") }
+        SettingsItem {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -718,6 +725,11 @@ private fun AiProgressCard(
         Spacer(Modifier.width(14.dp))
         if (state.running) TvChip("取消", onClick = onCancel) else TvChip("关闭", onClick = onDismiss)
     }
+}
+
+@Composable
+private fun SettingsItem(content: @Composable () -> Unit) {
+    content()
 }
 
 @Composable
