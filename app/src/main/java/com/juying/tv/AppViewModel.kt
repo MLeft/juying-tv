@@ -19,6 +19,8 @@ import com.juying.tv.data.repo.ResolvedEpisode
 import com.juying.tv.data.source.QuarkConfig
 import com.juying.tv.data.source.WebDavConfig
 import com.juying.tv.data.scrape.ScrapeCandidate
+import com.juying.tv.mcp.McpRuntime
+import com.juying.tv.mcp.McpServerService
 import com.juying.tv.data.scrape.ScrapeRateLimitedException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -125,6 +127,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val aiModel = settings.aiModel
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "qwen-plus")
+    val mcpEnabled = settings.mcpEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val mcpPort = settings.mcpPort
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 8787)
+    val mcpToken = settings.mcpToken
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val mcpRunning = McpRuntime.running
+    val mcpError = McpRuntime.error
     private val _aiModels = MutableStateFlow<List<String>>(emptyList())
     val aiModels: StateFlow<List<String>> = _aiModels.asStateFlow()
     private val _aiModelsLoading = MutableStateFlow(false)
@@ -692,6 +702,38 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             settings.setAiModel(model)
             _events.emit("AI 模型已切换为 $model")
+        }
+    }
+
+    fun setMcpEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled) {
+                var token = settings.mcpToken.first()
+                if (token.isBlank()) {
+                    token = McpServerService.generateToken()
+                    settings.setMcpToken(token)
+                }
+                settings.setMcpEnabled(true)
+                McpServerService.start(getApplication())
+                _events.emit("MCP 服务已开启，端口 ${settings.mcpPort.first()}")
+            } else {
+                settings.setMcpEnabled(false)
+                McpServerService.stop(getApplication())
+                _events.emit("MCP 服务已关闭")
+            }
+        }
+    }
+
+    fun regenerateMcpToken() {
+        viewModelScope.launch {
+            val token = McpServerService.generateToken()
+            settings.setMcpToken(token)
+            if (settings.mcpEnabled.first()) {
+                McpServerService.stop(getApplication())
+                kotlinx.coroutines.delay(300)
+                McpServerService.start(getApplication())
+            }
+            _events.emit("MCP Token 已重新生成，请更新 Agent 配置")
         }
     }
 

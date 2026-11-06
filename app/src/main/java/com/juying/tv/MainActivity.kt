@@ -6,7 +6,11 @@ import androidx.activity.compose.setContent
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.juying.tv.mcp.McpServerService
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import com.juying.tv.ui.AppRoot
 import com.juying.tv.ui.theme.JuyingTheme
 
@@ -17,6 +21,11 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT
         hideSystemBars()
+        lifecycleScope.launch {
+            if (JuyingApp.instance.graph.settings.mcpEnabled.first()) {
+                McpServerService.start(this@MainActivity)
+            }
+        }
 
         setContent {
             JuyingTheme {

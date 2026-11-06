@@ -22,14 +22,14 @@
 APK 已生成：
 
 ```
-dist/JuyingTV-1.3.1.apk
+dist/JuyingTV-1.4.0.apk
 ```
 
 ### ADB 安装（推荐）
 
 ```bash
 adb connect 192.168.1.196:5555
-adb install -r dist/JuyingTV-1.3.1.apk
+adb install -r dist/JuyingTV-1.4.0.apk
 ```
 
 如果电视提示“禁止安装未知来源应用”，请在电视的开发者选项/安全设置中允许 ADB 安装。首次连接需要在电视上确认调试授权。
@@ -163,6 +163,17 @@ adb install -r dist/JuyingTV-1.3.1.apk
 
 百炼默认走 `dashscope.aliyuncs.com`（国内可直连）；OpenAI 等其他供应商需要电视网络能访问对应 API，或使用自建 LiteLLM/New API 网关。Key 按供应商保存在本机，不写入代码或日志。
 
+## MCP Agent 接入
+
+应用内置一个局域网 MCP 服务，外部 Agent（Qoder、Cursor、Claude 等）可以直接管理媒体库：
+
+- 设置 → MCP Agent 接入 → 开启 MCP 服务；
+- 协议：Streamable HTTP，`POST http://<电视IP>:8787/mcp`，请求头 `Authorization: Bearer <Token>`；
+- Token 在本机生成，可在「MCP 连接信息」查看/重新生成；只允许 10/172.16/192.168 等局域网地址；
+- 工具包括：媒体库统计/搜索/详情/单集，剧集改名/换封面/儿童允许/隐藏，视频季集标题修改，合集增删改，扫描、刮削、AI 整理/找封面（异步任务 + 状态查询/取消），AI 供应商与模型列表；
+- 不提供删除原文件、删除媒体源、读取 Cookie/API Key 的工具；Token 不写日志；
+- 如果客户端只支持 SSE，可用 `npx mcp-remote http://<电视IP>:8787/mcp --header "Authorization: Bearer <Token>"` 桥接。
+
 ## 夸克网盘说明
 
 夸克网盘没有公开的开放平台接口，本项目使用网页版的 Cookie 接口（`drive-pc.quark.cn`）：
@@ -242,4 +253,4 @@ docs/screenshots/    实机界面截图
 
 ---
 
-版本：1.3.1 · 构建日期：2026-11-05
+版本：1.4.0 · 构建日期：2026-11-05

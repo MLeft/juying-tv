@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -103,6 +104,11 @@ fun SettingsScreen(
     val aiModels by viewModel.aiModels.collectAsStateWithLifecycle()
     val aiModelsLoading by viewModel.aiModelsLoading.collectAsStateWithLifecycle()
     val aiModelsError by viewModel.aiModelsError.collectAsStateWithLifecycle()
+    val mcpEnabled by viewModel.mcpEnabled.collectAsStateWithLifecycle()
+    val mcpPort by viewModel.mcpPort.collectAsStateWithLifecycle()
+    val mcpToken by viewModel.mcpToken.collectAsStateWithLifecycle()
+    val mcpRunning by viewModel.mcpRunning.collectAsStateWithLifecycle()
+    val mcpError by viewModel.mcpError.collectAsStateWithLifecycle()
 
     var showSetPin by remember { mutableStateOf(false) }
     var showVerifyForChange by remember { mutableStateOf(false) }
@@ -114,12 +120,14 @@ fun SettingsScreen(
     var showAiModel by remember { mutableStateOf(false) }
     var showAiCustomModel by remember { mutableStateOf(false) }
     var showAiBaseUrl by remember { mutableStateOf(false) }
+    var showMcpInfo by remember { mutableStateOf(false) }
     var showAiBatch by remember { mutableStateOf(false) }
     var showAiCover by remember { mutableStateOf(false) }
     val aiDialogFocus = remember { FocusRequester() }
     val aiModelFocus = remember { FocusRequester() }
     val aiProviderFocus = remember { FocusRequester() }
     val aiRefreshFocus = remember { FocusRequester() }
+    val mcpDialogFocus = remember { FocusRequester() }
     val firstFocus = remember { FocusRequester() }
     RegisterScreenFocus(firstFocus)
     val ip = remember { localIpv4Address() ?: "未连接局域网" }
@@ -404,12 +412,8 @@ fun SettingsScreen(
                 title = "AI 补齐缺失封面",
                 subtitle = "用百炼联网搜索为没有封面的内容找官方海报，建议家长抽查",
                 icon = Icons.Rounded.AutoAwesome,
-                modifier = Modifier.onPreviewKeyEvent { event ->
-                    event.type == KeyEventType.KeyDown &&
-                        event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
-                },
                 onClick = {
-                    if (!aiKeyConfigured) viewModel.notify("请先填写百炼 API Key")
+                    if (!aiKeyConfigured) viewModel.notify("请先填写当前供应商的 API Key")
                     else if (aiState?.running == true) viewModel.notify("AI 正在整理中")
                     else showAiCover = true
                 }
@@ -425,6 +429,64 @@ fun SettingsScreen(
                 Text(
                     "AI 会读取片名、文件名和所在目录，并发送给阿里云百炼；Key 仅保存在电视本机。" +
                         "整理结果会直接写入媒体库，联网找图可能包含第三方图片，建议家长抽查；调用模型可能产生费用。",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 20.sp
+                )
+            }
+        }
+        SettingsItem { SectionLabel("MCP Agent 接入") }
+        SettingsItem {
+            SettingRow(
+                title = "MCP 服务",
+                subtitle = when {
+                    !mcpEnabled -> "关闭后外部 Agent 无法连接；仅允许局域网访问"
+                    mcpRunning -> "运行中 · http://$ip:$mcpPort/mcp"
+                    mcpError != null -> "启动失败：$mcpError"
+                    else -> "正在启动…"
+                },
+                icon = Icons.Rounded.Cloud,
+                modifier = if (!mcpEnabled) Modifier.onPreviewKeyEvent { event ->
+                    event.type == KeyEventType.KeyDown &&
+                        event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                } else Modifier,
+                onClick = { viewModel.setMcpEnabled(!mcpEnabled) },
+                trailing = { TogglePill(mcpEnabled) }
+            )
+        }
+        if (mcpEnabled) {
+            SettingsItem {
+                SettingRow(
+                    title = "MCP 连接信息",
+                    subtitle = "查看局域网地址、Token 和外部 Agent 配置示例",
+                    icon = Icons.Rounded.QrCode2,
+                    onClick = { showMcpInfo = true }
+                )
+            }
+            SettingsItem {
+                SettingRow(
+                    title = "重新生成 MCP Token",
+                    subtitle = "旧 Token 会立即失效，需要同步更新 Agent 配置",
+                    icon = Icons.Rounded.Refresh,
+                    modifier = Modifier.onPreviewKeyEvent { event ->
+                        event.type == KeyEventType.KeyDown &&
+                            event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_DOWN
+                    },
+                    onClick = { viewModel.regenerateMcpToken() }
+                )
+            }
+        }
+        SettingsItem {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(JuyingColors.Surface.copy(alpha = 0.3f), RoundedCornerShape(14.dp))
+                    .padding(18.dp)
+            ) {
+                Text(
+                    "MCP 使用 Streamable HTTP（POST /mcp）+ Bearer Token，仅允许 10/172.16/192.168/局域网地址。" +
+                        "提供媒体库读取、改名、合集、扫描、刮削、AI 整理等工具；不提供删除原文件、删除媒体源或读取 Cookie/API Key 的工具。" +
+                        "Qoder、Cursor、Claude 等可直接填 URL + Authorization，或用 mcp-remote 桥接。",
                     color = JuyingColors.TextMuted,
                     style = MaterialTheme.typography.bodySmall,
                     lineHeight = 20.sp
@@ -497,6 +559,79 @@ fun SettingsScreen(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    if (showMcpInfo) {
+        val url = "http://$ip:$mcpPort/mcp"
+        val configText = """
+            {
+              "mcpServers": {
+                "juying-tv": {
+                  "url": "$url",
+                  "headers": {
+                    "Authorization": "Bearer $mcpToken"
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        TvDialog(
+            onDismiss = { showMcpInfo = false },
+            modifier = Modifier.width(980.dp)
+        ) {
+            Text(
+                "MCP 接入信息",
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                when {
+                    mcpRunning -> "服务运行中"
+                    mcpError != null -> "服务未运行：$mcpError"
+                    else -> "服务正在启动…"
+                },
+                color = if (mcpRunning) JuyingColors.Green else JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(Modifier.height(12.dp))
+            Text("地址：$url", color = JuyingColors.Blue, style = MaterialTheme.typography.bodyLarge)
+            Spacer(Modifier.height(4.dp))
+            Text("Token：$mcpToken", color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(16.dp))
+            Text("Agent 配置示例（Streamable HTTP）：", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodySmall)
+            Spacer(Modifier.height(6.dp))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF0A111D), RoundedCornerShape(10.dp))
+                    .border(1.dp, JuyingColors.Outline.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                    .padding(14.dp)
+            ) {
+                Text(
+                    configText,
+                    color = JuyingColors.TextPrimary,
+                    style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 20.sp
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "如果客户端只支持 SSE，可以用 mcp-remote 桥接：npx mcp-remote $url --header \"Authorization: Bearer ${mcpToken.take(8)}…\"",
+                color = JuyingColors.TextMuted,
+                style = MaterialTheme.typography.bodySmall,
+                lineHeight = 18.sp
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TvButton("关闭", { showMcpInfo = false }, focusRequester = mcpDialogFocus)
+            }
+            LaunchedEffect(Unit) {
+                delay(120)
+                runCatching { mcpDialogFocus.requestFocus() }
             }
         }
     }

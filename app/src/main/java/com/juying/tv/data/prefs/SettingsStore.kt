@@ -27,6 +27,9 @@ class SettingsStore(private val context: Context) {
         val aiProvider = stringPreferencesKey("ai_provider")
         val aiBaseUrl = stringPreferencesKey("ai_base_url")
         val aiKeys = stringPreferencesKey("ai_keys")
+        val mcpEnabled = booleanPreferencesKey("mcp_enabled")
+        val mcpToken = stringPreferencesKey("mcp_token")
+        val mcpPort = androidx.datastore.preferences.core.intPreferencesKey("mcp_port")
     }
 
     val kidsMode: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.kidsMode] ?: false }
@@ -39,6 +42,9 @@ class SettingsStore(private val context: Context) {
     val aiModel: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiModel] ?: "qwen-plus" }
     val aiProvider: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiProvider] ?: "bailian" }
     val aiBaseUrl: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiBaseUrl].orEmpty() }
+    val mcpEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.mcpEnabled] ?: false }
+    val mcpToken: Flow<String> = context.settingsDataStore.data.map { it[Keys.mcpToken].orEmpty() }
+    val mcpPort: Flow<Int> = context.settingsDataStore.data.map { it[Keys.mcpPort] ?: 8787 }
     val aiApiKeys: Flow<Map<String, String>> = context.settingsDataStore.data.map { prefs ->
         val raw = prefs[Keys.aiKeys].orEmpty()
         val map = runCatching {
@@ -99,6 +105,18 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setAiModel(model: String) {
         context.settingsDataStore.edit { it[Keys.aiModel] = model.trim() }
+    }
+
+    suspend fun setMcpEnabled(enabled: Boolean) {
+        context.settingsDataStore.edit { it[Keys.mcpEnabled] = enabled }
+    }
+
+    suspend fun setMcpToken(token: String) {
+        context.settingsDataStore.edit { it[Keys.mcpToken] = token.trim() }
+    }
+
+    suspend fun setMcpPort(port: Int) {
+        context.settingsDataStore.edit { it[Keys.mcpPort] = port }
     }
 
     suspend fun setPin(pin: String) {
