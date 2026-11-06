@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,8 +26,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -97,6 +100,7 @@ fun SeriesDetailScreen(
     val progress by viewModel.progressFlow(seriesId).collectAsStateWithLifecycle(emptyList())
     val sources by viewModel.sources.collectAsStateWithLifecycle()
     val collections by viewModel.collections.collectAsStateWithLifecycle()
+    val aiState by viewModel.aiState.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var showEdit by remember { mutableStateOf(false) }
@@ -152,6 +156,20 @@ fun SeriesDetailScreen(
         return
     }
 
+    val aiForSeries = aiState?.takeIf { it.seriesId == seriesId }
+    val aiBusy = aiForSeries?.running == true
+    var showAiResult by remember(seriesId) { mutableStateOf(false) }
+    LaunchedEffect(aiForSeries?.finished, aiForSeries?.message) {
+        if (aiForSeries?.finished == true && !aiForSeries.message.isNullOrBlank()) {
+            showAiResult = true
+            delay(10_000)
+            showAiResult = false
+        }
+    }
+    LaunchedEffect(aiBusy) {
+        if (aiBusy) showAiResult = false
+    }
+
     Column(Modifier.fillMaxSize().padding(horizontal = 28.dp, vertical = 18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TvChip(
@@ -168,10 +186,12 @@ fun SeriesDetailScreen(
             if (sourceName != null) Badge(sourceName, JuyingColors.Blue)
             Spacer(Modifier.weight(1f))
             if (!kidsMode) {
-                TvChip(
-                    "AI 整理",
-                    onClick = { viewModel.aiOrganizeSeries(seriesId) },
-                    icon = Icons.Rounded.AutoAwesome,
+                AiActionChip(
+                    busy = aiBusy,
+                    done = aiForSeries?.finished == true && showAiResult,
+                    onClick = {
+                        if (!aiBusy) viewModel.aiOrganizeSeries(seriesId)
+                    },
                     modifier = Modifier.focusProperties {
                         up = FocusRequester.Cancel
                         down = playFocus
@@ -200,6 +220,13 @@ fun SeriesDetailScreen(
             }
         }
         Spacer(Modifier.height(10.dp))
+        if (aiBusy || (aiForSeries?.finished == true && showAiResult)) {
+            AiStatusBanner(
+                busy = aiBusy,
+                message = aiForSeries?.message ?: if (aiBusy) "正在处理…" else "已完成"
+            )
+            Spacer(Modifier.height(10.dp))
+        }
 
         Box(
             Modifier
@@ -516,6 +543,109 @@ private fun EpisodeCard(
                         .fillMaxWidth()
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun AiActionChip(
+    busy: Boolean,
+    done: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    FocusableSurface(
+        onClick = onClick,
+        modifier = modifier.height(44.dp),
+        shape = RoundedCornerShape(50),
+        focusedScale = 1.05f,
+        backgroundColor = if (busy) JuyingColors.Gold.copy(alpha = 0.16f) else JuyingColors.Surface.copy(alpha = 0.5f),
+        focusedBackgroundColor = JuyingColors.SurfaceFocused,
+        borderColor = if (busy) JuyingColors.Gold.copy(alpha = 0.55f) else JuyingColors.Outline.copy(alpha = 0.55f),
+        focusedBorderColor = JuyingColors.Gold
+    ) {
+        Row(
+            Modifier.fillMaxHeight().padding(horizontal = 18.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (busy) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    color = JuyingColors.Gold,
+                    strokeWidth = 2.dp
+                )
+            } else if (done) {
+                Icon(
+                    Icons.Rounded.CheckCircle,
+                    contentDescription = null,
+                    tint = JuyingColors.Green,
+                    modifier = Modifier.size(18.dp)
+                )
+            } else {
+                Icon(
+                    Icons.Rounded.AutoAwesome,
+                    contentDescription = null,
+                    tint = JuyingColors.Gold,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                when {
+                    busy -> "整理中…"
+                    done -> "已完成"
+                    else -> "AI 整理"
+                },
+                color = when {
+                    busy -> JuyingColors.Gold
+                    done -> JuyingColors.Green
+                    else -> JuyingColors.TextPrimary
+                },
+                style = MaterialTheme.typography.labelLarge
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiStatusBanner(busy: Boolean, message: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(JuyingColors.Gold.copy(alpha = 0.08f))
+            .border(1.dp, JuyingColors.Gold.copy(alpha = 0.35f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(20.dp),
+                color = JuyingColors.Gold,
+                strokeWidth = 2.dp
+            )
+        } else {
+            Icon(
+                Icons.Rounded.CheckCircle,
+                contentDescription = null,
+                tint = JuyingColors.Green,
+                modifier = Modifier.size(22.dp)
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                if (busy) "AI 正在整理" else "AI 整理完成",
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.titleSmall
+            )
+            Text(
+                message,
+                color = JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

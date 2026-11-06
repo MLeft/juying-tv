@@ -31,7 +31,11 @@ class AiAgent(
     /**
      * 整理一部剧集：文件名/目录 → 季集/标题，必要时用联网搜索补封面。
      */
-    suspend fun organizeSeries(series: SeriesEntity, findCover: Boolean = true): AiApplyResult {
+    suspend fun organizeSeries(
+        series: SeriesEntity,
+        findCover: Boolean = true,
+        onStage: (String) -> Unit = {}
+    ): AiApplyResult {
         val media = database.mediaDao().allBySeries(series.id)
         if (media.isEmpty()) return AiApplyResult("没有可整理的文件", 0, false)
         val files = media.map { item ->
@@ -42,6 +46,7 @@ class AiAgent(
                 .joinToString("/")
             AiFile(item.fileName, folder)
         }
+        onStage("正在让 AI 整理季/集与标题…")
         val plan = bailian.normalize(series.displayTitle, series.year, files)
             ?: return AiApplyResult("AI 没有返回可解析的整理结果", 0, false)
         if (media.size >= 5 && plan.episodes.size < media.size / 3) {
@@ -50,6 +55,7 @@ class AiAgent(
 
         var coverUri: String? = null
         if (findCover && series.coverUrl.isNullOrBlank()) {
+            onStage("正在联网搜索封面…")
             coverUri = downloadCover(series)
         }
         val originalSeasons = media.map { it.season }.distinct()
@@ -83,6 +89,7 @@ class AiAgent(
             "计划：${sanitized.seriesTitle}，${sanitized.episodes.size} 集，示例=" +
                 sanitized.episodes.take(3).joinToString { "${it.season}-${it.episode}:${it.title}" }
         )
+        onStage("正在写入媒体库…")
         val applied = repository.applyAiPlan(series, sanitized, coverUri)
         if (applied == 0) return AiApplyResult("AI 结果与文件不匹配，未修改", 0, false)
 

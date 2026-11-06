@@ -47,6 +47,7 @@ data class ScrapeUiState(
 
 data class AiUiState(
     val running: Boolean = false,
+    val seriesId: String? = null,
     val currentTitle: String = "",
     val index: Int = 0,
     val total: Int = 0,
@@ -688,12 +689,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 _events.emit("剧集不存在")
                 return@launch
             }
-            _aiState.value = AiUiState(running = true, currentTitle = target.displayTitle, index = 1, total = 1)
+            _aiState.value = AiUiState(
+                running = true,
+                seriesId = seriesId,
+                currentTitle = target.displayTitle,
+                index = 1,
+                total = 1,
+                message = "正在读取文件名与目录…"
+            )
             _events.emit("AI 正在整理「${target.displayTitle}」…")
             try {
-                val result = graph.aiAgent.organizeSeries(target)
+                val result = graph.aiAgent.organizeSeries(target) { stage ->
+                    _aiState.value = _aiState.value?.copy(message = stage)
+                }
                 _aiState.value = AiUiState(
                     running = false,
+                    seriesId = seriesId,
                     currentTitle = target.displayTitle,
                     index = 1,
                     total = 1,
@@ -709,6 +720,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 android.util.Log.w("JuyingAi", "AI 整理失败: ${e.message}")
                 _aiState.value = AiUiState(
                     running = false,
+                    seriesId = seriesId,
                     currentTitle = target.displayTitle,
                     index = 1,
                     total = 1,
