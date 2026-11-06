@@ -403,6 +403,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun scrapeAll(force: Boolean = false) {
         if (scrapeJob?.isActive == true) return
+        if (aiJob?.isActive == true) {
+            _events.tryEmit("AI 正在整理，请稍候")
+            return
+        }
         scrapeJob = viewModelScope.launch {
             val all = series.value
             val existing = runCatching { repo.getAllScrapeMeta().map { it.seriesId }.toSet() }
@@ -542,6 +546,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun scrapeSeries(seriesId: String) {
         if (scrapeJob?.isActive == true) {
             _events.tryEmit("正在刮削，请稍候")
+            return
+        }
+        if (aiJob?.isActive == true) {
+            _events.tryEmit("AI 正在整理，请稍候")
             return
         }
         scrapeJob = viewModelScope.launch {
