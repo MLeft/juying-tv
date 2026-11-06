@@ -7,6 +7,7 @@ import android.util.Log
 import com.juying.tv.data.db.AppDatabase
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.data.repo.LibraryRepository
+import com.juying.tv.data.repo.PlaybackResolver
 import com.juying.tv.util.sha256
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -23,7 +24,8 @@ class AiAgent(
     private val context: Context,
     private val database: AppDatabase,
     private val repository: LibraryRepository,
-    private val bailian: BailianClient
+    private val bailian: BailianClient,
+    private val playbackResolver: PlaybackResolver
 ) {
 
     /**
@@ -50,7 +52,38 @@ class AiAgent(
         if (findCover && series.coverUrl.isNullOrBlank()) {
             coverUri = downloadCover(series)
         }
-        val applied = repository.applyAiPlan(series, plan, coverUri)
+        val originalSeasons = media.map { it.season }.distinct()
+        val aiSeasons = plan.episodes.map { it.season }.distinct()
+        val collapsedSeasons = originalSeasons.size > 1 && aiSeasons.size == 1
+        if (collapsedSeasons) {
+            Log.w("JuyingAi", "AI 把多季折叠成单季，保留原始季/集，仅应用标题")
+        }
+        val usedPairs = HashSet<Pair<Int, Int>>()
+        val sanitized = plan.copy(
+            episodes = plan.episodes.map { episode ->
+                val target = media.getOrNull(episode.index - 1)
+                val fallback = cleanFileStem(target?.fileName.orEmpty())
+                val title = episode.title.takeIf {
+                    !isGenericTitle(it, series.displayTitle, fallback)
+                } ?: fallback
+                var season = episode.season
+                var number = episode.episode
+                if (collapsedSeasons || !usedPairs.add(season to number)) {
+                    target?.let {
+                        season = it.season
+                        number = it.episode
+                    }
+                }
+                usedPairs.add(season to number)
+                episode.copy(season = season, episode = number, title = title)
+            }
+        )
+        android.util.Log.i(
+            "JuyingAi",
+            "计划：${sanitized.seriesTitle}，${sanitized.episodes.size} 集，示例=" +
+                sanitized.episodes.take(3).joinToString { "${it.season}-${it.episode}:${it.title}" }
+        )
+        val applied = repository.applyAiPlan(series, sanitized, coverUri)
         if (applied == 0) return AiApplyResult("AI 结果与文件不匹配，未修改", 0, false)
 
         val name = plan.seriesTitle ?: series.displayTitle
@@ -64,8 +97,48 @@ class AiAgent(
 
     suspend fun fillCover(series: SeriesEntity): String? = downloadCover(series)
 
+    private fun cleanFileStem(fileName: String): String {
+        if (fileName.isBlank()) return ""
+        var value = fileName.substringBeforeLast('.')
+        value = value.replace(Regex("^\\d{1,3}[.\\s_-]+"), "")
+        value = value.replace(Regex("(?i)(1080p|720p|2160p|4k|bluray|web[- ]?dl|hdtv|x264|x265|hevc|aac|h\\.?264|h\\.?265)"), " ")
+        value = value.replace(Regex("[_]+"), " ")
+        return value.replace(Regex("\\s+"), " ").trim().take(60)
+    }
+
+    private fun isGenericTitle(title: String, seriesTitle: String, fallback: String): Boolean {
+        val value = title.trim()
+        if (value.length < 2) return true
+        if (value.all { it.isDigit() }) return true
+        if (value == seriesTitle || value == seriesTitle.substringBefore(" 第一季")) return true
+        if (value == fallback) return false
+        val generic = setOf(
+            "一", "二", "三", "四", "五", "六", "七", "八", "九", "十",
+            "又一个", "下一个", "未知", "未命名", "暂无", "无标题"
+        )
+        if (value in generic) return true
+        if (value.matches(Regex("第\\s*\\d+\\s*集"))) return true
+        return false
+    }
+
     private suspend fun downloadCover(series: SeriesEntity): String? = withContext(Dispatchers.IO) {
-        val poster = bailian.findPoster(series.displayTitle, series.year) ?: return@withContext null
+        val poster = bailian.findPoster(series.displayTitle, series.year)
+        android.util.Log.i(
+            "JuyingAi",
+            "封面搜索「${series.displayTitle}」：${if (poster == null) "无结果" else poster.sourceUrl.substringBefore('?')}"
+        )
+        if (poster == null) {
+            // 联网搜索没有拿到可用海报时，用第一集真实缩略图兜底，至少保证有封面。
+            val first = database.mediaDao().allBySeries(series.id).firstOrNull()
+            val thumb = first?.let { runCatching { playbackResolver.episodeThumbnail(it.id) }.getOrNull() }
+            if (thumb != null) {
+                val uri = android.net.Uri.fromFile(thumb).toString()
+                repository.applyAiCover(series, uri)
+                Log.i("JuyingAi", "AI 封面改用首集缩略图")
+                return@withContext uri
+            }
+            return@withContext null
+        }
         val bitmap = BitmapFactory.decodeByteArray(poster.bytes, 0, poster.bytes.size)
             ?: return@withContext null
         val width = 800

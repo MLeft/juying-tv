@@ -487,7 +487,9 @@ private fun EpisodeCard(
                     .padding(horizontal = 7.dp, vertical = 3.dp)
             )
             Text(
-                media.fileName.substringBeforeLast('.').ifBlank { episodeDisplay(media, multiSeason) },
+                media.title
+                    .takeIf { it.isNotBlank() && it != series.displayTitle && it != series.autoTitle }
+                    ?: media.fileName.substringBeforeLast('.').ifBlank { episodeDisplay(media, multiSeason) },
                 color = Color.White,
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,

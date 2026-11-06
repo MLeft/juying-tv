@@ -95,7 +95,8 @@ class BailianClient(
             appendLine("规则：")
             appendLine("1. index 必须来自上面的序号，每个文件最多一次，不要编造文件。")
             appendLine("2. season/episode 从文件名和目录推断；课程级别当作季；无法判断时按列表顺序编号。")
-            appendLine("3. title 去掉扩展名、数字编号、清晰度、语言标签、集数后缀，最多 30 字。")
+            appendLine("3. title 只做文件名清洗：去掉扩展名、开头编号、清晰度、语言标签和集数后缀，保留文件名里有意义的词；不要根据剧情编造标题。")
+            appendLine("   无法清洗出有意义内容时，直接输出清洗后的文件名。")
             appendLine("4. 只整理文件，不要输出不存在的内容。")
         }
         val result = chat(
@@ -135,13 +136,19 @@ class BailianClient(
                 jsonMode = true
             )
             val poster = AiJson.parsePoster(result.content)
+            android.util.Log.i(
+                "JuyingAi",
+                "海报模型返回：${result.content.take(160)}；来源 ${result.searchUrls.size} 个"
+            )
             val candidates = buildList {
                 poster?.imageUrl?.let { add(it to poster.pageUrl) }
                 poster?.pageUrl?.let { add(null to it) }
-                result.searchUrls.take(3).forEach { add(null to it) }
+                extractImageUrls(result.content).forEach { add(it to poster?.pageUrl) }
+                result.searchUrls.take(8).forEach { add(null to it) }
             }
             if (candidates.isEmpty()) return@withContext null
 
+            android.util.Log.i("JuyingAi", "海报候选：${candidates.size} 个")
             for ((directImage, pageUrl) in candidates) {
                 if (directImage != null) {
                     downloadImage(directImage, pageUrl)?.let { bytes ->
@@ -258,7 +265,8 @@ class BailianClient(
                 val patterns = listOf(
                     Regex("""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)""", RegexOption.IGNORE_CASE),
                     Regex("""<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']""", RegexOption.IGNORE_CASE),
-                    Regex("""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)""", RegexOption.IGNORE_CASE)
+                    Regex("""<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)""", RegexOption.IGNORE_CASE),
+                    Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
                 )
                 val raw = patterns.firstNotNullOfOrNull { it.find(html)?.groupValues?.getOrNull(1) }
                     ?: return@use null
@@ -288,6 +296,13 @@ class BailianClient(
             }
         }.getOrNull()
     }
+
+    private fun extractImageUrls(content: String): List<String> =
+        Regex("""https?://[^\s"'<>]+?\.(?:jpg|jpeg|png|webp)(?:\?[^\s"'<>]*)?""", RegexOption.IGNORE_CASE)
+            .findAll(content)
+            .map { it.value }
+            .take(6)
+            .toList()
 
     private fun normalizeImageUrl(url: String): String? {
         var value = url.trim().replace("&amp;", "&")

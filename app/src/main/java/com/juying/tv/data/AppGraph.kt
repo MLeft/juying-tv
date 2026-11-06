@@ -40,6 +40,6 @@ class AppGraph(context: Context) {
     val bailian = BailianClient(okHttp, settings)
     val scanner = SourceScanner(appContext, webDav, quark)
     val repository = LibraryRepository(appContext, database, scanner)
-    val aiAgent = AiAgent(appContext, database, repository, bailian)
     val playbackResolver = PlaybackResolver(appContext, database, webDav, quark)
+    val aiAgent = AiAgent(appContext, database, repository, bailian, playbackResolver)
 }
