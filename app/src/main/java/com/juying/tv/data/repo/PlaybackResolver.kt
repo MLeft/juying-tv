@@ -161,6 +161,16 @@ class PlaybackResolver(
         }
     }
 
+    /** 剧集封面兜底：取第一集（按季/集/排序）的缩略图。 */
+    suspend fun seriesThumbnail(seriesId: String): File? {
+        val first = database.mediaDao().allBySeries(seriesId)
+            .asSequence()
+            .filter { !it.hidden }
+            .minWithOrNull(compareBy({ it.season }, { it.episode }, { it.sortIndex }))
+            ?: return null
+        return episodeThumbnail(first.id)
+    }
+
     suspend fun updateDuration(mediaId: String, durationMs: Long) {
         if (durationMs <= 0) return
         database.mediaDao().setDuration(mediaId, durationMs)

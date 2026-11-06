@@ -65,6 +65,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -81,6 +82,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.juying.tv.JuyingApp
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.ui.theme.JuyingColors
 import com.juying.tv.ui.util.PhoneField
@@ -317,17 +319,6 @@ fun GradientArtwork(
                 .clip(CircleShape)
                 .background(JuyingColors.Gold.copy(alpha = 0.06f))
         )
-        if (title.isNotBlank()) {
-            Text(
-                text = title.take(1),
-                color = Color.White.copy(alpha = 0.14f),
-                fontSize = 96.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 8.dp, bottom = 0.dp)
-            )
-        }
         if (showTitle && title.isNotBlank()) {
             Box(
                 Modifier
@@ -360,18 +351,37 @@ fun SeriesArtwork(
     contentScale: ContentScale = ContentScale.Crop
 ) {
     val image = series.coverUrl?.takeIf { it.isNotBlank() } ?: series.coverRef?.takeIf { it.isNotBlank() }
+    val context = LocalContext.current
     var imageFailed by remember(image) { mutableStateOf(false) }
+    var fallback by remember(series.id) { mutableStateOf<java.io.File?>(null) }
+    var fallbackFailed by remember(series.id) { mutableStateOf(false) }
+    LaunchedEffect(series.id, image, imageFailed) {
+        fallbackFailed = false
+        fallback = if (image == null || imageFailed) {
+            runCatching {
+                JuyingApp.graphOf(context).playbackResolver.seriesThumbnail(series.id)
+            }.getOrNull()
+        } else {
+            null
+        }
+    }
     Box(modifier) {
-        if (image != null && !imageFailed) {
-            AsyncImage(
+        when {
+            image != null && !imageFailed -> AsyncImage(
                 model = image,
                 contentDescription = series.displayTitle,
                 contentScale = contentScale,
                 onError = { imageFailed = true },
                 modifier = Modifier.fillMaxSize()
             )
-        } else {
-            GradientArtwork(series, Modifier.fillMaxSize(), showTitleFallback)
+            fallback != null && !fallbackFailed -> AsyncImage(
+                model = fallback,
+                contentDescription = series.displayTitle,
+                contentScale = contentScale,
+                onError = { fallbackFailed = true },
+                modifier = Modifier.fillMaxSize()
+            )
+            else -> GradientArtwork(series, Modifier.fillMaxSize(), showTitleFallback)
         }
     }
 }
