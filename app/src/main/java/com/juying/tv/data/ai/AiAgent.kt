@@ -24,7 +24,7 @@ class AiAgent(
     private val context: Context,
     private val database: AppDatabase,
     private val repository: LibraryRepository,
-    private val bailian: BailianClient,
+    private val ai: AiClient,
     private val playbackResolver: PlaybackResolver
 ) {
 
@@ -46,9 +46,29 @@ class AiAgent(
                 .joinToString("/")
             AiFile(item.fileName, folder)
         }
-        onStage("正在让 AI 整理季/集与标题…")
-        val plan = bailian.normalize(series.displayTitle, series.year, files)
-            ?: return AiApplyResult("AI 没有返回可解析的整理结果", 0, false)
+        // 长剧集分块请求，避免单次 JSON 过长导致超时/截断。
+        val chunkSize = 40
+        val chunks = files.chunked(chunkSize)
+        val mergedEpisodes = ArrayList<AiEpisodePlan>()
+        var mergedTitle: String? = null
+        chunks.forEachIndexed { chunkIndex, chunk ->
+            onStage("正在整理第 ${chunkIndex + 1}/${chunks.size} 批（${chunk.size} 集）…")
+            val chunkPlan = ai.normalize(series.displayTitle, series.year, chunk)
+                ?: return AiApplyResult(
+                    "AI 第 ${chunkIndex + 1}/${chunks.size} 批没有返回可解析结果",
+                    0,
+                    false
+                )
+            if (!chunkPlan.seriesTitle.isNullOrBlank() && mergedTitle.isNullOrBlank()) {
+                mergedTitle = chunkPlan.seriesTitle
+            }
+            chunkPlan.episodes.forEach { episode ->
+                mergedEpisodes += episode.copy(index = chunkIndex * chunkSize + episode.index)
+            }
+            if (chunkIndex < chunks.lastIndex) kotlinx.coroutines.delay(300)
+        }
+        val plan = AiSeriesPlan(mergedTitle, mergedEpisodes)
+        Log.i("JuyingAi", "分块整理：${chunks.size} 批，合计 ${plan.episodes.size} 集")
         if (media.size >= 5 && plan.episodes.size < media.size / 3) {
             return AiApplyResult("AI 返回的集数过少（${plan.episodes.size}/${media.size}），已放弃应用", 0, false)
         }
@@ -129,7 +149,7 @@ class AiAgent(
     }
 
     private suspend fun downloadCover(series: SeriesEntity): String? = withContext(Dispatchers.IO) {
-        val poster = bailian.findPoster(series.displayTitle, series.year)
+        val poster = ai.findPoster(series.displayTitle, series.year)
         android.util.Log.i(
             "JuyingAi",
             "封面搜索「${series.displayTitle}」：${if (poster == null) "无结果" else poster.sourceUrl.substringBefore('?')}"

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -36,6 +37,7 @@ import androidx.compose.material.icons.rounded.PlayCircle
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.VisibilityOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -55,9 +57,11 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.juying.tv.AiUiState
 import com.juying.tv.AppViewModel
+import com.juying.tv.data.ai.AiProviders
 import com.juying.tv.BuildConfig
 import com.juying.tv.ui.components.Badge
 import com.juying.tv.ui.components.ConfirmDialog
+import com.juying.tv.ui.components.FocusableSurface
 import com.juying.tv.ui.components.PhoneAssistDialog
 import com.juying.tv.ui.components.PinDialogBody
 import com.juying.tv.ui.components.SetPinDialog
@@ -93,6 +97,12 @@ fun SettingsScreen(
     val aiKeyConfigured by viewModel.aiKeyConfigured.collectAsStateWithLifecycle()
     val aiKeyLength by viewModel.aiKeyLength.collectAsStateWithLifecycle()
     val aiModel by viewModel.aiModel.collectAsStateWithLifecycle()
+    val aiProvider by viewModel.aiProvider.collectAsStateWithLifecycle()
+    val aiProviderName by viewModel.aiProviderName.collectAsStateWithLifecycle()
+    val aiBaseUrl by viewModel.aiBaseUrl.collectAsStateWithLifecycle()
+    val aiModels by viewModel.aiModels.collectAsStateWithLifecycle()
+    val aiModelsLoading by viewModel.aiModelsLoading.collectAsStateWithLifecycle()
+    val aiModelsError by viewModel.aiModelsError.collectAsStateWithLifecycle()
 
     var showSetPin by remember { mutableStateOf(false) }
     var showVerifyForChange by remember { mutableStateOf(false) }
@@ -100,11 +110,16 @@ fun SettingsScreen(
     var showEnableKids by remember { mutableStateOf(false) }
     var showAiKey by remember { mutableStateOf(false) }
     var showAiPhone by remember { mutableStateOf(false) }
+    var showAiProvider by remember { mutableStateOf(false) }
     var showAiModel by remember { mutableStateOf(false) }
+    var showAiCustomModel by remember { mutableStateOf(false) }
+    var showAiBaseUrl by remember { mutableStateOf(false) }
     var showAiBatch by remember { mutableStateOf(false) }
     var showAiCover by remember { mutableStateOf(false) }
     val aiDialogFocus = remember { FocusRequester() }
     val aiModelFocus = remember { FocusRequester() }
+    val aiProviderFocus = remember { FocusRequester() }
+    val aiRefreshFocus = remember { FocusRequester() }
     val firstFocus = remember { FocusRequester() }
     RegisterScreenFocus(firstFocus)
     val ip = remember { localIpv4Address() ?: "未连接局域网" }
@@ -308,7 +323,26 @@ fun SettingsScreen(
                 )
             }
         }
-        SettingsItem { SectionLabel("AI 智能整理（阿里云百炼）") }
+        SettingsItem { SectionLabel("AI 智能整理") }
+        SettingsItem {
+            SettingRow(
+                title = "模型供应商",
+                subtitle = "百炼 / OpenAI / DeepSeek / 硅基流动 / OpenRouter / 自建网关",
+                icon = Icons.Rounded.Cloud,
+                onClick = { showAiProvider = true },
+                trailing = { Text(aiProviderName, color = JuyingColors.Gold, style = MaterialTheme.typography.bodySmall) }
+            )
+        }
+        if (aiProvider == "custom") {
+            SettingsItem {
+                SettingRow(
+                    title = "OpenAI 兼容网关地址",
+                    subtitle = if (aiBaseUrl.isBlank()) "填写 LiteLLM / New API / One API 等网关的 /v1 地址" else aiBaseUrl,
+                    icon = Icons.Rounded.Cloud,
+                    onClick = { showAiBaseUrl = true }
+                )
+            }
+        }
         aiState?.let { state ->
             SettingsItem {
                 AiProgressCard(
@@ -322,9 +356,9 @@ fun SettingsScreen(
             SettingRow(
                 title = "百炼 API Key",
                 subtitle = if (aiKeyConfigured) {
-                    "已填写 · $aiKeyLength 个字符，仅保存在电视本机"
+                    "$aiProviderName · 已填写 $aiKeyLength 个字符，仅保存在电视本机"
                 } else {
-                    "填写后可用大模型规范文件名、季集和封面"
+                    "$aiProviderName · 填写后可用大模型规范文件名、季集和封面"
                 },
                 icon = Icons.Rounded.AutoAwesome,
                 onClick = { if (aiKeyConfigured) showAiKey = true else showAiPhone = true },
@@ -336,9 +370,12 @@ fun SettingsScreen(
         SettingsItem {
             SettingRow(
                 title = "AI 模型",
-                subtitle = "默认 qwen-plus；整理季集/标题，联网搜索用于找封面",
+                subtitle = "从供应商读取最新模型，也可手动输入模型名",
                 icon = Icons.Rounded.Cloud,
-                onClick = { showAiModel = true },
+                onClick = {
+                    showAiModel = true
+                    viewModel.loadAiModels()
+                },
                 trailing = { Text(aiModel, color = JuyingColors.Gold, style = MaterialTheme.typography.bodySmall) }
             )
         }
@@ -522,42 +559,193 @@ fun SettingsScreen(
         }
     }
 
-    if (showAiModel) {
+    if (showAiProvider) {
         TvDialog(
-            onDismiss = { showAiModel = false },
-            modifier = Modifier.width(720.dp)
+            onDismiss = { showAiProvider = false },
+            modifier = Modifier.width(880.dp)
         ) {
             Text(
-                "AI 模型",
+                "选择模型供应商",
                 color = JuyingColors.TextPrimary,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             Text(
-                "qwen-plus 性价比高；qwen-max 更准确但费用更高；qwen-turbo 更快。",
+                "支持 OpenAI 兼容协议；LiteLLM / New API / One API 等自建网关请选择“自建网关”。",
                 color = JuyingColors.TextSecondary,
                 style = MaterialTheme.typography.bodySmall
             )
-            Spacer(Modifier.height(18.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf("qwen-plus", "qwen-max", "qwen-turbo").forEachIndexed { index, model ->
-                    TvChip(
-                        model,
-                        selected = aiModel == model,
+            Spacer(Modifier.height(16.dp))
+            Column(
+                Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                AiProviders.presets.forEachIndexed { index, preset ->
+                    FocusableSurface(
                         onClick = {
-                            viewModel.setAiModel(model)
-                            showAiModel = false
+                            viewModel.setAiProvider(preset.id)
+                            showAiProvider = false
                         },
-                        focusRequester = if (index == 0) aiModelFocus else null
-                    )
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 56.dp)
+                            .focusRequester(if (index == 0) aiProviderFocus else FocusRequester()),
+                        shape = RoundedCornerShape(10.dp),
+                        focusedScale = 1.01f,
+                        backgroundColor = if (aiProvider == preset.id) JuyingColors.Gold.copy(alpha = 0.1f) else JuyingColors.Surface.copy(alpha = 0.35f),
+                        focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                        borderColor = if (aiProvider == preset.id) JuyingColors.Gold.copy(alpha = 0.5f) else JuyingColors.Outline.copy(alpha = 0.4f)
+                    ) {
+                        Row(
+                            Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(preset.name, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    preset.baseUrl.ifBlank { "自定义地址" },
+                                    color = JuyingColors.TextMuted,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    maxLines = 1
+                                )
+                            }
+                            if (aiProvider == preset.id) Badge("当前", JuyingColors.Gold)
+                        }
+                    }
                 }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TvButton("关闭", { showAiProvider = false }, primary = false)
             }
             LaunchedEffect(Unit) {
                 delay(120)
-                runCatching { aiModelFocus.requestFocus() }
+                runCatching { aiProviderFocus.requestFocus() }
             }
         }
+    }
+
+    if (showAiModel) {
+        val presetModels = AiProviders.byId(aiProvider).models
+        val modelList = (aiModels.ifEmpty { presetModels }).distinct().take(80)
+        TvDialog(
+            onDismiss = { showAiModel = false },
+            modifier = Modifier.width(860.dp)
+        ) {
+            Text(
+                "选择模型 · $aiProviderName",
+                color = JuyingColors.TextPrimary,
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "当前：$aiModel。在线列表来自供应商 /models；没有列表时可手动输入。",
+                color = JuyingColors.TextSecondary,
+                style = MaterialTheme.typography.bodySmall
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TvChip(
+                    if (aiModelsLoading) "正在读取…" else "刷新在线模型",
+                    onClick = { viewModel.loadAiModels() },
+                    focusRequester = if (modelList.isEmpty()) aiRefreshFocus else null
+                )
+                Spacer(Modifier.width(12.dp))
+                if (aiModelsError != null) {
+                    Text(aiModelsError!!, color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (modelList.isEmpty() && !aiModelsLoading) {
+                Text("没有可显示的模型，请手动输入模型名。", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+            } else {
+                Column(
+                    Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    modelList.forEachIndexed { index, model ->
+                        FocusableSurface(
+                            onClick = {
+                                viewModel.setAiModel(model)
+                                showAiModel = false
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
+                                .focusRequester(if (index == 0) aiModelFocus else FocusRequester()),
+                            shape = RoundedCornerShape(8.dp),
+                            focusedScale = 1.01f,
+                            backgroundColor = if (aiModel == model) JuyingColors.Gold.copy(alpha = 0.1f) else JuyingColors.Surface.copy(alpha = 0.3f),
+                            focusedBackgroundColor = JuyingColors.SurfaceFocused
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(model, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                if (aiModel == model) Badge("当前", JuyingColors.Gold)
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End)) {
+                TvButton("手动输入模型", {
+                    showAiModel = false
+                    showAiCustomModel = true
+                }, primary = false)
+                TvButton("关闭", { showAiModel = false }, primary = false)
+            }
+            LaunchedEffect(Unit) {
+                delay(120)
+                runCatching {
+                    if (modelList.isEmpty()) aiRefreshFocus.requestFocus() else aiModelFocus.requestFocus()
+                }
+            }
+        }
+    }
+
+    if (showAiCustomModel) {
+        PhoneAssistDialog(
+            title = "自定义模型名",
+            fields = listOf(
+                PhoneField(
+                    key = "model",
+                    label = "模型 ID",
+                    value = aiModel,
+                    placeholder = "例如 qwen-plus 或 gpt-5",
+                    hint = "填写供应商控制台里的模型 ID，保存后会用于 AI 整理。"
+                )
+            ),
+            onDismiss = { showAiCustomModel = false },
+            onResult = { values ->
+                viewModel.setAiModel(values["model"].orEmpty())
+                showAiCustomModel = false
+            }
+        )
+    }
+
+    if (showAiBaseUrl) {
+        PhoneAssistDialog(
+            title = "OpenAI 兼容网关地址",
+            fields = listOf(
+                PhoneField(
+                    key = "baseUrl",
+                    label = "Base URL",
+                    value = aiBaseUrl,
+                    placeholder = "http://192.168.1.10:4000/v1",
+                    hint = "例如 LiteLLM / New API / One API 的 /v1 地址，末尾不要带 /chat/completions。"
+                )
+            ),
+            onDismiss = { showAiBaseUrl = false },
+            onResult = { values ->
+                viewModel.setAiBaseUrl(values["baseUrl"].orEmpty())
+                showAiBaseUrl = false
+            }
+        )
     }
 
     if (showAiBatch) {

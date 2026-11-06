@@ -24,6 +24,9 @@ class SettingsStore(private val context: Context) {
         val scrapeYearCollections = booleanPreferencesKey("scrape_year_collections")
         val aiApiKey = stringPreferencesKey("ai_api_key")
         val aiModel = stringPreferencesKey("ai_model")
+        val aiProvider = stringPreferencesKey("ai_provider")
+        val aiBaseUrl = stringPreferencesKey("ai_base_url")
+        val aiKeys = stringPreferencesKey("ai_keys")
     }
 
     val kidsMode: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.kidsMode] ?: false }
@@ -32,8 +35,24 @@ class SettingsStore(private val context: Context) {
     val resumePlayback: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.resumePlayback] ?: true }
     val scrapeMergeDuplicates: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.scrapeMergeDuplicates] ?: true }
     val scrapeYearCollections: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.scrapeYearCollections] ?: false }
-    val aiApiKey: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiApiKey].orEmpty() }
+    val aiLegacyKey: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiApiKey].orEmpty() }
     val aiModel: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiModel] ?: "qwen-plus" }
+    val aiProvider: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiProvider] ?: "bailian" }
+    val aiBaseUrl: Flow<String> = context.settingsDataStore.data.map { it[Keys.aiBaseUrl].orEmpty() }
+    val aiApiKeys: Flow<Map<String, String>> = context.settingsDataStore.data.map { prefs ->
+        val raw = prefs[Keys.aiKeys].orEmpty()
+        val map = runCatching {
+            val json = org.json.JSONObject(raw)
+            buildMap {
+                json.keys().forEach { key -> put(key, json.optString(key)) }
+            }
+        }.getOrDefault(emptyMap()).toMutableMap()
+        val legacy = prefs[Keys.aiApiKey].orEmpty()
+        if (legacy.isNotBlank() && map["bailian"].isNullOrBlank()) {
+            map["bailian"] = legacy
+        }
+        map
+    }
 
     suspend fun setKidsMode(enabled: Boolean) {
         context.settingsDataStore.edit { it[Keys.kidsMode] = enabled }
@@ -55,8 +74,27 @@ class SettingsStore(private val context: Context) {
         context.settingsDataStore.edit { it[Keys.scrapeYearCollections] = enabled }
     }
 
-    suspend fun setAiApiKey(key: String) {
-        context.settingsDataStore.edit { it[Keys.aiApiKey] = key.trim() }
+    suspend fun setAiKey(provider: String, key: String) {
+        context.settingsDataStore.edit { prefs ->
+            val raw = prefs[Keys.aiKeys].orEmpty()
+            val map = runCatching {
+                val json = org.json.JSONObject(raw)
+                buildMap {
+                    json.keys().forEach { name -> put(name, json.optString(name)) }
+                }
+            }.getOrDefault(emptyMap()).toMutableMap()
+            if (key.isBlank()) map.remove(provider) else map[provider] = key.trim()
+            prefs[Keys.aiKeys] = org.json.JSONObject(map as Map<*, *>).toString()
+            if (provider == "bailian") prefs[Keys.aiApiKey] = key.trim()
+        }
+    }
+
+    suspend fun setAiProvider(provider: String) {
+        context.settingsDataStore.edit { it[Keys.aiProvider] = provider }
+    }
+
+    suspend fun setAiBaseUrl(url: String) {
+        context.settingsDataStore.edit { it[Keys.aiBaseUrl] = url.trim() }
     }
 
     suspend fun setAiModel(model: String) {

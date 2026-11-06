@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -108,12 +109,28 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
     val scrapeYearCollections = settings.scrapeYearCollections
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-    val aiKeyConfigured = settings.aiApiKey.map { it.isNotBlank() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
-    val aiKeyLength = settings.aiApiKey.map { it.length }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+    val aiProvider = settings.aiProvider
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "bailian")
+    val aiProviderName = aiProvider.map { com.juying.tv.data.ai.AiProviders.byId(it).name }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "阿里云百炼")
+    val aiBaseUrl = settings.aiBaseUrl
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "")
+    val aiKeys = settings.aiApiKeys
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+    val aiKeyConfigured = combine(aiProvider, aiKeys) { provider, keys ->
+        keys[provider].orEmpty().isNotBlank()
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+    val aiKeyLength = combine(aiProvider, aiKeys) { provider, keys ->
+        keys[provider].orEmpty().length
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     val aiModel = settings.aiModel
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "qwen-plus")
+    private val _aiModels = MutableStateFlow<List<String>>(emptyList())
+    val aiModels: StateFlow<List<String>> = _aiModels.asStateFlow()
+    private val _aiModelsLoading = MutableStateFlow(false)
+    val aiModelsLoading: StateFlow<Boolean> = _aiModelsLoading.asStateFlow()
+    private val _aiModelsError = MutableStateFlow<String?>(null)
+    val aiModelsError: StateFlow<String?> = _aiModelsError.asStateFlow()
 
     val continueWatching = kidsMode.flatMapLatest { kids ->
         repo.continueWatching(kids)
@@ -643,12 +660,33 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setAiKey(key: String) {
         viewModelScope.launch {
-            settings.setAiApiKey(key)
-            _events.emit(if (key.isBlank()) "已清除百炼 API Key" else "百炼 API Key 已保存")
+            val provider = settings.aiProvider.first()
+            settings.setAiKey(provider, key)
+            val name = com.juying.tv.data.ai.AiProviders.byId(provider).name
+            _events.emit(if (key.isBlank()) "已清除 $name 的 API Key" else "$name 的 API Key 已保存")
         }
     }
 
     fun clearAiKey() = setAiKey("")
+
+    fun setAiProvider(provider: String) {
+        viewModelScope.launch {
+            settings.setAiProvider(provider)
+            val preset = com.juying.tv.data.ai.AiProviders.byId(provider)
+            val defaultModel = preset.models.firstOrNull()
+            if (!defaultModel.isNullOrBlank()) settings.setAiModel(defaultModel)
+            _aiModels.value = preset.models
+            _aiModelsError.value = null
+            _events.emit("AI 供应商已切换为 ${preset.name}")
+        }
+    }
+
+    fun setAiBaseUrl(url: String) {
+        viewModelScope.launch {
+            settings.setAiBaseUrl(url)
+            _events.emit("AI 网关地址已保存")
+        }
+    }
 
     fun setAiModel(model: String) {
         viewModelScope.launch {
@@ -657,16 +695,35 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun loadAiModels() {
+        viewModelScope.launch {
+            _aiModelsLoading.value = true
+            _aiModelsError.value = null
+            val provider = settings.aiProvider.first()
+            val preset = com.juying.tv.data.ai.AiProviders.byId(provider)
+            runCatching { graph.ai.listModels() }
+                .onSuccess { models ->
+                    _aiModels.value = models.ifEmpty { preset.models }
+                    if (models.isEmpty()) _aiModelsError.value = "该供应商没有返回模型列表，可使用预设模型或手动填写"
+                }
+                .onFailure { e ->
+                    _aiModels.value = preset.models
+                    _aiModelsError.value = e.message ?: "模型列表获取失败"
+                }
+            _aiModelsLoading.value = false
+        }
+    }
+
     fun testAi() {
         viewModelScope.launch {
             if (!hasAiKey()) {
-                _events.emit("请先在设置中填写百炼 API Key")
+                _events.emit("请先在设置中填写当前供应商的 API Key")
                 return@launch
             }
-            _events.emit("正在测试百炼连接…")
-            runCatching { graph.bailian.test() }
-                .onSuccess { _events.emit("百炼连接成功：$it") }
-                .onFailure { _events.emit("百炼连接失败：${it.message ?: "未知错误"}") }
+            _events.emit("正在测试模型连接…")
+            runCatching { graph.ai.test() }
+                .onSuccess { _events.emit("连接成功：$it") }
+                .onFailure { _events.emit("连接失败：${it.message ?: "未知错误"}") }
         }
     }
 
@@ -681,7 +738,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         aiJob = viewModelScope.launch {
             if (!hasAiKey()) {
-                _events.emit("请先在设置中填写百炼 API Key")
+                _events.emit("请先在设置中填写当前供应商的 API Key")
                 return@launch
             }
             val target = series.value.firstOrNull { it.id == seriesId }
@@ -740,7 +797,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
         aiJob = viewModelScope.launch {
             if (!hasAiKey()) {
-                _events.emit("请先在设置中填写百炼 API Key")
+                _events.emit("请先在设置中填写当前供应商的 API Key")
                 return@launch
             }
             val targets = series.value
@@ -793,7 +850,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         if (aiJob?.isActive == true) return
         aiJob = viewModelScope.launch {
             if (!hasAiKey()) {
-                _events.emit("请先在设置中填写百炼 API Key")
+                _events.emit("请先在设置中填写当前供应商的 API Key")
                 return@launch
             }
             val targets = series.value.filter { it.coverUrl.isNullOrBlank() }
@@ -848,7 +905,10 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _aiState.value = null
     }
 
-    private suspend fun hasAiKey(): Boolean = settings.aiApiKey.first().isNotBlank()
+    private suspend fun hasAiKey(): Boolean {
+        val provider = settings.aiProvider.first()
+        return settings.aiApiKeys.first()[provider].orEmpty().isNotBlank()
+    }
 
     fun setScrapeMergeDuplicates(enabled: Boolean) {
         viewModelScope.launch { settings.setScrapeMergeDuplicates(enabled) }

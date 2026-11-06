@@ -27,12 +27,6 @@ data class AiPoster(
     val confidence: Double = 0.0
 )
 
-data class AiConfig(
-    val apiKey: String,
-    val model: String,
-    val baseUrl: String = "https://dashscope.aliyuncs.com"
-)
-
 /** 大模型返回的 JSON 经常带 ```json 包裹或解释文字，这里做容错提取。 */
 object AiJson {
     fun extractObject(text: String): JSONObject? {
