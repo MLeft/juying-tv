@@ -1,14 +1,19 @@
 package com.juying.tv.mcp
 
 import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
 import com.juying.tv.data.AppGraph
 import com.juying.tv.data.db.MediaEntity
 import com.juying.tv.data.db.SeriesEntity
 import com.juying.tv.data.scrape.ScrapeRateLimitedException
 import com.juying.tv.util.sha256
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -24,6 +29,10 @@ class McpTools(
 ) {
     private val db get() = graph.database
     private val repo get() = graph.repository
+
+    private companion object {
+        const val MAX_COVER_BYTES = 12 * 1024 * 1024
+    }
 
     fun toolsJson(): JSONArray = JSONArray().apply {
         put(tool(
@@ -73,6 +82,22 @@ class McpTools(
                 "kids_allowed" to prop("boolean", "儿童模式是否允许，可选"),
                 "hidden" to prop("boolean", "是否从媒体库隐藏，可选")
             ), listOf("series_id")
+        ))
+        put(tool(
+            "series_import_cover",
+            "从图片 URL 下载并缓存为剧集封面，返回新的封面地址。",
+            mapOf(
+                "series_id" to prop("string", "剧集 ID"),
+                "image_url" to prop("string", "图片 URL")
+            ), listOf("series_id", "image_url")
+        ))
+        put(tool(
+            "series_upload_cover",
+            "上传 base64 图片（支持 data URI）并设为剧集封面，供外部 Agent 找图后写入。",
+            mapOf(
+                "series_id" to prop("string", "剧集 ID"),
+                "image_base64" to prop("string", "图片 base64 或 data:image/...;base64,...")
+            ), listOf("series_id", "image_base64")
         ))
         put(tool(
             "media_update",
@@ -197,6 +222,8 @@ class McpTools(
         "library_list_collections" -> listCollections()
         "library_list_sources" -> listSources()
         "series_update" -> updateSeries(args)
+        "series_import_cover" -> importCover(args)
+        "series_upload_cover" -> uploadCover(args)
         "media_update" -> updateMedia(args)
         "collection_create" -> createCollection(args)
         "collection_rename" -> renameCollection(args)
@@ -319,6 +346,49 @@ class McpTools(
         if (args.has("hidden")) repo.setSeriesHidden(id, args.optBoolean("hidden"))
         val updated = db.seriesDao().find(id) ?: series
         return seriesJson(updated, db.mediaDao().countAll(id))
+    }
+
+    private suspend fun importCover(args: JSONObject): JSONObject {
+        val id = args.require("series_id")
+        val imageUrl = args.require("image_url")
+        val series = db.seriesDao().find(id) ?: throw IllegalArgumentException("剧集不存在：$id")
+        val bytes = withContext(Dispatchers.IO) {
+            val request = Request.Builder()
+                .url(imageUrl)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android 9) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
+                .header("Accept", "image/*")
+                .build()
+            runCatching {
+                graph.okHttp.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val body = response.body ?: return@use null
+                    if (body.contentLength() > MAX_COVER_BYTES) return@use null
+                    body.bytes().takeIf { it.size in 1024..MAX_COVER_BYTES }
+                }
+            }.getOrNull()
+        } ?: throw IllegalArgumentException("图片下载失败或文件过大")
+        return saveCover(series, bytes)
+    }
+
+    private suspend fun uploadCover(args: JSONObject): JSONObject {
+        val id = args.require("series_id")
+        val series = db.seriesDao().find(id) ?: throw IllegalArgumentException("剧集不存在：$id")
+        val raw = args.require("image_base64").substringAfter("base64,", args.require("image_base64"))
+        val bytes = runCatching { Base64.decode(raw, Base64.DEFAULT) }.getOrNull()
+            ?: throw IllegalArgumentException("图片 base64 解码失败")
+        return saveCover(series, bytes)
+    }
+
+    private suspend fun saveCover(series: SeriesEntity, bytes: ByteArray): JSONObject {
+        if (bytes.size !in 1024..MAX_COVER_BYTES) throw IllegalArgumentException("图片大小不合法")
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth < 240 || bounds.outHeight < 240) throw IllegalArgumentException("图片尺寸过小")
+        val dir = File(context.filesDir, "covers").apply { mkdirs() }
+        val file = File(dir, "agent-${sha256(series.id + bytes.size + System.nanoTime()).take(32)}.jpg")
+        file.writeBytes(bytes)
+        repo.setSeriesCover(series.id, Uri.fromFile(file).toString())
+        return seriesJson(series.copy(coverUrl = Uri.fromFile(file).toString()), db.mediaDao().countAll(series.id))
     }
 
     private suspend fun updateMedia(args: JSONObject): JSONObject {
