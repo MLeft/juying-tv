@@ -1120,13 +1120,13 @@ fun PosterCard(
         Column(
             Modifier
                 .align(Alignment.BottomStart)
-                .padding(12.dp)
+                .padding(horizontal = 10.dp, vertical = 12.dp)
                 .fillMaxWidth()
         ) {
             Text(
                 series.displayTitle,
                 color = Color.White,
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
