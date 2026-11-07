@@ -452,6 +452,14 @@ fun EmptyState(
     action: (() -> Unit)? = null,
     focusRequester: FocusRequester? = null
 ) {
+    val internalFocus = remember { FocusRequester() }
+    val targetFocus = focusRequester ?: internalFocus
+    LaunchedEffect(Unit) {
+        if (actionText != null && action != null) {
+            delay(120)
+            runCatching { targetFocus.requestFocus() }
+        }
+    }
     Column(
         modifier = modifier.fillMaxSize().padding(horizontal = 56.dp),
         verticalArrangement = Arrangement.Center,
@@ -484,7 +492,7 @@ fun EmptyState(
         )
         if (actionText != null && action != null) {
             Spacer(Modifier.height(28.dp))
-            TvButton(text = actionText, onClick = action, focusRequester = focusRequester)
+            TvButton(text = actionText, onClick = action, focusRequester = targetFocus)
         }
     }
 }

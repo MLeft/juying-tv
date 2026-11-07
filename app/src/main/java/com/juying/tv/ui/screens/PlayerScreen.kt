@@ -14,6 +14,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -69,6 +70,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,11 +98,13 @@ import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.itemsIndexed
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.tv.foundation.lazy.grid.TvGridCells
+import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
+import androidx.tv.foundation.lazy.grid.itemsIndexed
+import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
 import com.juying.tv.AppViewModel
 import com.juying.tv.JuyingApp
+import coil.compose.AsyncImage
 import com.juying.tv.data.db.MediaEntity
 import com.juying.tv.data.db.SeriesKind
 import com.juying.tv.data.repo.PlaybackBundle
@@ -116,6 +120,7 @@ import com.juying.tv.util.formatSpeed
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
 
 private data class SubtitleOption(
     val label: String,
@@ -668,6 +673,7 @@ fun PlayerScreen(
                 EpisodePanel(
                     bundle = bundle,
                     currentIndex = currentIndex,
+                    loadThumbnail = { mediaId -> viewModel.episodeThumbnail(mediaId) },
                     onSelect = { switchTo(it) },
                     onClose = { showEpisodes = false }
                 )
@@ -987,18 +993,19 @@ private fun PlayerControl(
 private fun EpisodePanel(
     bundle: PlaybackBundle?,
     currentIndex: Int,
+    loadThumbnail: suspend (String) -> File?,
     onSelect: (Int) -> Unit,
     onClose: () -> Unit
 ) {
     val episodes = bundle?.episodes.orEmpty()
     val multiSeason = remember(episodes) { episodes.map { it.season }.distinct().size > 1 }
     val firstFocus = remember { FocusRequester() }
-    val state = rememberTvLazyListState(
-        initialFirstVisibleItemIndex = (currentIndex - 2).coerceAtLeast(0)
+    val state = rememberTvLazyGridState(
+        initialFirstVisibleItemIndex = ((currentIndex - 2).coerceAtLeast(0) / 2) * 2
     )
 
     LaunchedEffect(Unit) {
-        delay(100)
+        delay(120)
         runCatching { firstFocus.requestFocus() }
     }
 
@@ -1013,20 +1020,20 @@ private fun EpisodePanel(
         )
         Column(
             Modifier
-                .width(430.dp)
+                .width(510.dp)
                 .fillMaxHeight()
                 .background(
                     Brush.horizontalGradient(
                         listOf(Color(0xF00B121D), Color(0xFF070B12))
                     )
                 )
-                .padding(horizontal = 20.dp, vertical = 22.dp)
+                .padding(horizontal = 18.dp, vertical = 20.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("选集", color = Color.White, style = MaterialTheme.typography.headlineMedium)
                     Text(
-                        "${episodes.size} 集",
+                        "${episodes.size} 集 · 选一集继续看",
                         color = JuyingColors.TextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -1034,57 +1041,125 @@ private fun EpisodePanel(
                 TvButton("关闭", onClose, primary = false)
             }
             Spacer(Modifier.height(12.dp))
-            TvLazyColumn(
+            TvLazyVerticalGrid(
+                columns = TvGridCells.Fixed(2),
                 state = state,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 20.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+                contentPadding = PaddingValues(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 itemsIndexed(episodes, key = { _, it -> it.id }) { index, item ->
-                    val current = index == currentIndex
-                    FocusableSurface(
+                    val label = episodeLabel(
+                        item,
+                        bundle?.series?.kind == SeriesKind.MOVIE,
+                        multiSeason
+                    )
+                    EpisodePanelCard(
+                        media = item,
+                        label = label,
+                        current = index == currentIndex,
+                        loadThumbnail = loadThumbnail,
                         onClick = { onSelect(index) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp)
-                            .then(if (current) Modifier.focusRequester(firstFocus) else Modifier),
-                        shape = RoundedCornerShape(11.dp),
-                        focusedScale = 1.015f,
-                        backgroundColor = if (current) JuyingColors.Gold.copy(alpha = 0.12f) else JuyingColors.Surface.copy(alpha = 0.3f),
-                        focusedBackgroundColor = JuyingColors.SurfaceFocused,
-                        borderColor = if (current) JuyingColors.Gold.copy(alpha = 0.5f) else JuyingColors.Outline.copy(alpha = 0.4f)
-                    ) {
-                        Row(
-                            Modifier.padding(horizontal = 13.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                episodeLabel(item, bundle?.series?.kind == SeriesKind.MOVIE, multiSeason),
-                                color = if (current) JuyingColors.Gold else JuyingColors.TextSecondary,
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.width(72.dp)
-                            )
-                            Text(
-                                item.title,
-                                color = JuyingColors.TextPrimary,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            if (current) {
-                                Box(
-                                    Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(JuyingColors.Gold)
-                                )
-                            }
-                        }
-                    }
+                        modifier = if (index == currentIndex) Modifier.focusRequester(firstFocus) else Modifier
+                    )
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EpisodePanelCard(
+    media: MediaEntity,
+    label: String,
+    current: Boolean,
+    loadThumbnail: suspend (String) -> File?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var thumb by remember(media.id) { mutableStateOf<File?>(null) }
+    LaunchedEffect(media.id) {
+        thumb = runCatching { loadThumbnail(media.id) }.getOrNull()
+    }
+    Column(modifier.fillMaxWidth()) {
+        FocusableSurface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            shape = RoundedCornerShape(12.dp),
+            focusedScale = 1.045f,
+            backgroundColor = if (current) JuyingColors.Gold.copy(alpha = 0.14f) else JuyingColors.Surface.copy(alpha = 0.4f),
+            focusedBackgroundColor = JuyingColors.SurfaceFocused,
+            borderColor = if (current) JuyingColors.Gold.copy(alpha = 0.72f) else JuyingColors.Outline.copy(alpha = 0.45f)
+        ) {
+            if (thumb != null) {
+                AsyncImage(
+                    model = thumb,
+                    contentDescription = media.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.linearGradient(
+                                listOf(Color(0xFF22344F), Color(0xFF101B2A))
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(7.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.Black.copy(alpha = 0.68f))
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
+            ) {
+                Text(
+                    label,
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+            if (current) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(7.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(JuyingColors.Gold.copy(alpha = 0.92f))
+                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        "播放中",
+                        color = JuyingColors.OnGold,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            media.title,
+            color = if (current) JuyingColors.Gold else JuyingColors.TextSecondary,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

@@ -221,6 +221,20 @@ class PlaybackResolver(
         return file
     }
 
+    /** 控制首集/选集缩略图缓存占用，按最久未使用淘汰。 */
+    suspend fun pruneThumbCache(maxBytes: Long = 200L * 1024 * 1024) = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "episode_thumbs")
+        val files = dir.listFiles()?.filter { it.isFile } ?: return@withContext
+        var total = files.sumOf { it.length() }
+        if (total <= maxBytes) return@withContext
+        files.sortedBy { it.lastModified() }.forEach { file ->
+            if (total > maxBytes) {
+                val size = file.length()
+                if (file.delete()) total -= size
+            }
+        }
+    }
+
     suspend fun updateDuration(mediaId: String, durationMs: Long) {
         if (durationMs <= 0) return
         database.mediaDao().setDuration(mediaId, durationMs)
