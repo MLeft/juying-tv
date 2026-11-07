@@ -29,12 +29,17 @@ class SubtitleClient(client: OkHttpClient) {
         .readTimeout(25, TimeUnit.SECONDS)
         .build()
 
-    suspend fun search(query: String, season: Int, episode: Int): List<OnlineSubtitle> {
+    suspend fun search(
+        query: String,
+        season: Int,
+        episode: Int,
+        exactEpisode: Boolean = true
+    ): List<OnlineSubtitle> {
         val q = query.trim()
         if (q.isBlank()) return emptyList()
         var url = "https://rest.opensubtitles.org/search/query-" + URLEncoder.encode(q, "UTF-8")
-        if (season > 0) url += "/season-$season"
-        if (episode > 0) url += "/episode-$episode"
+        if (exactEpisode && season > 0) url += "/season-$season"
+        if (exactEpisode && episode > 0) url += "/episode-$episode"
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "JuyingTV/1.4")

@@ -95,6 +95,8 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     val sources = repo.sources.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val series = repo.visibleSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    val seriesLoaded = repo.visibleSeries.map { true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val hiddenSeries = repo.hiddenSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collections = repo.collections.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val collectionItems = repo.collectionItems.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())

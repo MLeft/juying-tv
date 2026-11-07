@@ -8,6 +8,12 @@ import androidx.compose.ui.input.key.type
 import com.juying.tv.ui.RegisterScreenFocus
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -103,6 +109,7 @@ fun LibraryScreen(
     val collectionItems by viewModel.collectionItems.collectAsStateWithLifecycle()
     val hiddenSeries by viewModel.hiddenSeries.collectAsStateWithLifecycle()
     val scanState by viewModel.scanState.collectAsStateWithLifecycle()
+    val seriesLoaded by viewModel.seriesLoaded.collectAsStateWithLifecycle()
 
     val visible = if (kidsMode) kidsSeries else allSeries
     val visibleById = remember(visible) { visible.associateBy { it.id } }
@@ -191,66 +198,76 @@ fun LibraryScreen(
         }
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
-            when {
-                kidsMode -> {
-                    if (filtered.isEmpty() && visible.isNotEmpty() && hasActiveFilter) {
-                        EmptyState(
-                            title = "没有匹配的内容",
-                            description = "试试其他关键词，或清除筛选条件。",
-                            actionText = "清除筛选",
-                            action = { searchQuery = ""; kindFilter = "ALL" },
-                            focusRequester = firstContentFocus
+            if (!seriesLoaded && visible.isEmpty()) {
+                LibrarySkeleton()
+            } else {
+                Crossfade(
+                    targetState = if (kidsMode) LibraryTab.ALL else tab,
+                    animationSpec = tween(180),
+                    label = "libraryTab"
+                ) { activeTab ->
+                    when {
+                        kidsMode -> {
+                            if (filtered.isEmpty() && visible.isNotEmpty() && hasActiveFilter) {
+                                EmptyState(
+                                    title = "没有匹配的内容",
+                                    description = "试试其他关键词，或清除筛选条件。",
+                                    actionText = "清除筛选",
+                                    action = { searchQuery = ""; kindFilter = "ALL" },
+                                    focusRequester = firstContentFocus
+                                )
+                            } else {
+                                AllSeriesGrid(
+                                    series = filtered,
+                                    onOpenSeries = onOpenSeries,
+                                    emptyAction = { viewModel.scanAll() },
+                                    firstFocus = firstContentFocus
+                                )
+                            }
+                        }
+                        activeTab == LibraryTab.COLLECTIONS -> CollectionsContent(
+                            collections = collections,
+                            collectionItems = collectionItems,
+                            seriesById = visibleById,
+                            onCreate = { showCreate = true },
+                            onOpenCollection = onOpenCollection,
+                            onEditCollection = onEditCollection,
+                            firstContentFocus = firstContentFocus
                         )
-                    } else {
-                        AllSeriesGrid(
-                            series = filtered,
-                            onOpenSeries = onOpenSeries,
-                            emptyAction = { viewModel.scanAll() },
-                            firstFocus = firstContentFocus
+                        activeTab == LibraryTab.ALL -> {
+                            if (filtered.isEmpty() && visible.isNotEmpty() && hasActiveFilter) {
+                                EmptyState(
+                                    title = "没有匹配的内容",
+                                    description = "试试其他关键词，或清除筛选条件。",
+                                    actionText = "清除筛选",
+                                    action = { searchQuery = ""; kindFilter = "ALL" },
+                                    focusRequester = firstContentFocus
+                                )
+                            } else {
+                                AllSeriesGrid(
+                                    series = filtered,
+                                    onOpenSeries = onOpenSeries,
+                                    emptyAction = onOpenSources,
+                                    firstFocus = firstContentFocus
+                                )
+                            }
+                        }
+                        else -> ManageContent(
+                            collections = collections,
+                            collectionItems = collectionItems,
+                            hiddenCount = hiddenSeries.size,
+                            firstFocus = firstContentFocus,
+                            onMoveCollection = { id, delta -> viewModel.moveCollection(id, delta) },
+                            onToggleHome = { id, show -> viewModel.setCollectionShowOnHome(id, show) },
+                            onEditCollection = onEditCollection,
+                            onDeleteCollection = { deleteTarget = it },
+                            onOpenHidden = onOpenHidden,
+                            onOpenKidsManage = onOpenKidsManage,
+                            onOpenSources = onOpenSources,
+                            onScan = { viewModel.scanAll() }
                         )
                     }
                 }
-                tab == LibraryTab.COLLECTIONS -> CollectionsContent(
-                    collections = collections,
-                    collectionItems = collectionItems,
-                    seriesById = visibleById,
-                    onCreate = { showCreate = true },
-                    onOpenCollection = onOpenCollection,
-                    onEditCollection = onEditCollection,
-                    firstContentFocus = firstContentFocus
-                )
-                tab == LibraryTab.ALL -> {
-                    if (filtered.isEmpty() && visible.isNotEmpty() && hasActiveFilter) {
-                        EmptyState(
-                            title = "没有匹配的内容",
-                            description = "试试其他关键词，或清除筛选条件。",
-                            actionText = "清除筛选",
-                            action = { searchQuery = ""; kindFilter = "ALL" },
-                            focusRequester = firstContentFocus
-                        )
-                    } else {
-                        AllSeriesGrid(
-                            series = filtered,
-                            onOpenSeries = onOpenSeries,
-                            emptyAction = onOpenSources,
-                            firstFocus = firstContentFocus
-                        )
-                    }
-                }
-                else -> ManageContent(
-                    collections = collections,
-                    collectionItems = collectionItems,
-                    hiddenCount = hiddenSeries.size,
-                    firstFocus = firstContentFocus,
-                    onMoveCollection = { id, delta -> viewModel.moveCollection(id, delta) },
-                    onToggleHome = { id, show -> viewModel.setCollectionShowOnHome(id, show) },
-                    onEditCollection = onEditCollection,
-                    onDeleteCollection = { deleteTarget = it },
-                    onOpenHidden = onOpenHidden,
-                    onOpenKidsManage = onOpenKidsManage,
-                    onOpenSources = onOpenSources,
-                    onScan = { viewModel.scanAll() }
-                )
             }
         }
     }
@@ -514,6 +531,38 @@ private fun CollectionCard(
                     JuyingColors.Gold,
                     Modifier.align(Alignment.TopEnd).padding(12.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LibrarySkeleton() {
+    val transition = rememberInfiniteTransition(label = "librarySkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.26f,
+        targetValue = 0.44f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "librarySkeletonAlpha"
+    )
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        repeat(2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                repeat(6) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(JuyingColors.Surface.copy(alpha = alpha))
+                    )
+                }
             }
         }
     }

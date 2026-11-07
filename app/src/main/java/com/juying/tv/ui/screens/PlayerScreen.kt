@@ -410,25 +410,46 @@ fun PlayerScreen(
 
     fun runSubtitleSearch() {
         val ep = bundle?.episodes?.getOrNull(currentIndex)
-        val seriesTitle = bundle?.series?.displayTitle.orEmpty()
+        val series = bundle?.series
+        val seriesTitle = series?.displayTitle.orEmpty()
+        val season = ep?.season ?: 0
+        val episode = ep?.episode ?: 0
         val primary = onlineQuery.trim().ifBlank { ep?.title.orEmpty() }
         scope.launch {
             onlineLoading = true
             onlineError = null
             try {
-                val queries = listOf(primary, subtitleSeriesAlias(seriesTitle))
-                    .filter { it.isNotBlank() }
-                    .distinct()
+                val queries = listOf(
+                    primary,
+                    subtitleSeriesAlias(seriesTitle),
+                    seriesTitle,
+                    series?.autoTitle.orEmpty()
+                ).filter { it.isNotBlank() }.distinct()
                 var found = emptyList<OnlineSubtitle>()
                 for (query in queries) {
-                    found = graph.subtitles.search(query, ep?.season ?: 0, ep?.episode ?: 0)
+                    found = graph.subtitles.search(query, season, episode, exactEpisode = true)
                     if (found.isNotEmpty()) break
+                }
+                if (found.isEmpty()) {
+                    // 有些旧条目缺少季/集元数据，退化为剧名搜索后在客户端按集过滤。
+                    val loose = queries.flatMap { query ->
+                        runCatching {
+                            graph.subtitles.search(query, 0, 0, exactEpisode = false)
+                        }.getOrDefault(emptyList())
+                    }
+                    found = loose
+                        .filter {
+                            (it.season == 0 && it.episode == 0) ||
+                                (season > 0 && it.season == season && (episode <= 0 || it.episode == episode))
+                        }
+                        .distinctBy { it.id }
+                        .take(20)
                 }
                 onlineResults = found
                 showOnlineSearch = false
                 showOnlineResults = true
                 if (found.isEmpty()) {
-                    onlineError = "没有找到本集字幕；已自动尝试剧名。可以手动输入英文原名再搜。"
+                    onlineError = "OpenSubtitles 没有收录这部剧的字幕。可以换英文原名，或加载本地 srt。"
                 }
             } catch (e: Exception) {
                 onlineError = e.message ?: "在线字幕搜索失败"
@@ -1945,14 +1966,24 @@ private fun OnlineSubtitleResultPanel(
                                 Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    sub.label,
-                                    color = JuyingColors.TextPrimary,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        sub.label,
+                                        color = JuyingColors.TextPrimary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        if (sub.season > 0 && sub.episode > 0) {
+                                            "S%02dE%02d · %s".format(sub.season, sub.episode, sub.format.uppercase())
+                                        } else {
+                                            "集数未知 · ${sub.format.uppercase()}"
+                                        },
+                                        color = if (sub.season > 0) JuyingColors.Gold else JuyingColors.TextMuted,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
                                 if (sub.sizeBytes > 0) {
                                     Spacer(Modifier.width(8.dp))
                                     Text(

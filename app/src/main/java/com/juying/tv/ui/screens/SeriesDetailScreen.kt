@@ -29,6 +29,7 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -177,8 +178,6 @@ fun SeriesDetailScreen(
     LaunchedEffect(aiForSeries?.finished, aiForSeries?.message) {
         if (aiForSeries?.finished == true && !aiForSeries.message.isNullOrBlank()) {
             showAiResult = true
-            delay(10_000)
-            showAiResult = false
         }
     }
     LaunchedEffect(aiBusy) {
@@ -238,7 +237,12 @@ fun SeriesDetailScreen(
         if (aiBusy || (aiForSeries?.finished == true && showAiResult)) {
             AiStatusBanner(
                 busy = aiBusy,
-                message = aiForSeries?.message ?: if (aiBusy) "正在处理…" else "已完成"
+                message = aiForSeries?.message ?: if (aiBusy) "正在处理…" else "已完成",
+                onRetry = {
+                    showAiResult = false
+                    viewModel.aiOrganizeSeries(seriesId)
+                },
+                onDismiss = { showAiResult = false }
             )
             Spacer(Modifier.height(10.dp))
         }
@@ -623,7 +627,12 @@ private fun AiActionChip(
 }
 
 @Composable
-private fun AiStatusBanner(busy: Boolean, message: String) {
+private fun AiStatusBanner(
+    busy: Boolean,
+    message: String,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -658,9 +667,14 @@ private fun AiStatusBanner(busy: Boolean, message: String) {
                 message,
                 color = JuyingColors.TextSecondary,
                 style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
+        }
+        if (!busy) {
+            TvChip("重试", onClick = onRetry, icon = Icons.Rounded.Refresh)
+            Spacer(Modifier.width(8.dp))
+            TvChip("关闭", onClick = onDismiss)
         }
     }
 }
