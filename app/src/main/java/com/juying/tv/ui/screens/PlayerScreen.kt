@@ -442,12 +442,12 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(overlayVisible) {
+    LaunchedEffect(overlayVisible, showEpisodes, showSubtitles, showSpeed, showAspect) {
         delay(100)
-        if (overlayVisible) {
-            runCatching { playFocus.requestFocus() }
-        } else {
-            runCatching { rootFocus.requestFocus() }
+        when {
+            !overlayVisible -> runCatching { rootFocus.requestFocus() }
+            !showEpisodes && !showSubtitles && !showSpeed && !showAspect ->
+                runCatching { playFocus.requestFocus() }
         }
     }
 
