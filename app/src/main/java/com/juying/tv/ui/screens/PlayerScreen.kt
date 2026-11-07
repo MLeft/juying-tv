@@ -1,8 +1,11 @@
 package com.juying.tv.ui.screens
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.graphics.Typeface
 import android.net.Uri
+import android.os.Environment
 import android.provider.OpenableColumns
 import android.util.Log
 import android.util.TypedValue
@@ -21,6 +24,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -203,26 +209,46 @@ fun PlayerScreen(
     var toast by remember { mutableStateOf<String?>(null) }
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
+    val subtitleFocus = remember { FocusRequester() }
     val progressFraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
-    val subtitlePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) {
-            scope.launch {
-                val copied = copySubtitleToCache(context, uri)
-                if (copied == null) {
-                    toast = "读取字幕文件失败"
-                } else {
-                    pendingSeekMs = positionMs
-                    manualSubtitle = SubtitleSpec(
-                        Uri.fromFile(copied),
-                        "本地字幕",
-                        subtitleMime(copied.name),
-                        "zh"
-                    )
-                    toast = "已加载本地字幕"
-                }
-            }
+    var showLocalBrowser by remember { mutableStateOf(false) }
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            showLocalBrowser = true
+        } else {
+            toast = "没有存储权限，无法读取电视或 U 盘里的字幕"
         }
+    }
+
+    fun openLocalSubtitleBrowser() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            showLocalBrowser = true
+        } else {
+            storagePermission.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+        }
+    }
+
+    fun returnToSubtitleControl() {
+        scope.launch {
+            delay(250)
+            runCatching { subtitleFocus.requestFocus() }
+        }
+    }
+
+    fun pickLocalSubtitle(file: File) {
+        pendingSeekMs = positionMs
+        manualSubtitle = SubtitleSpec(
+            Uri.fromFile(file),
+            "本地字幕 · ${file.name}",
+            subtitleMime(file.name),
+            "zh"
+        )
+        showLocalBrowser = false
+        returnToSubtitleControl()
+        toast = "已加载 ${file.name}"
     }
 
     LaunchedEffect(mediaId, reload) {
@@ -378,18 +404,26 @@ fun PlayerScreen(
 
     fun runSubtitleSearch() {
         val ep = bundle?.episodes?.getOrNull(currentIndex)
+        val seriesTitle = bundle?.series?.displayTitle.orEmpty()
+        val primary = onlineQuery.trim().ifBlank { ep?.title.orEmpty() }
         scope.launch {
             onlineLoading = true
             onlineError = null
             try {
-                onlineResults = graph.subtitles.search(
-                    onlineQuery.ifBlank { bundle?.series?.displayTitle.orEmpty() },
-                    ep?.season ?: 0,
-                    ep?.episode ?: 0
-                )
+                val queries = listOf(primary, subtitleSeriesAlias(seriesTitle))
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                var found = emptyList<OnlineSubtitle>()
+                for (query in queries) {
+                    found = graph.subtitles.search(query, ep?.season ?: 0, ep?.episode ?: 0)
+                    if (found.isNotEmpty()) break
+                }
+                onlineResults = found
                 showOnlineSearch = false
                 showOnlineResults = true
-                if (onlineResults.isEmpty()) onlineError = "没有找到匹配字幕，可以换个关键词，如英文原名。"
+                if (found.isEmpty()) {
+                    onlineError = "没有找到本集字幕；已自动尝试剧名。可以手动输入英文原名再搜。"
+                }
             } catch (e: Exception) {
                 onlineError = e.message ?: "在线字幕搜索失败"
                 showOnlineResults = true
@@ -413,6 +447,7 @@ fun PlayerScreen(
                 manualSubtitle = SubtitleSpec(Uri.fromFile(file), sub.label, subtitleMime(file.name), languageCode(sub.language))
                 selectedSubtitle = sub.label
                 showOnlineResults = false
+                returnToSubtitleControl()
                 toast = "已加载 ${sub.label}"
             } catch (e: Exception) {
                 onlineError = e.message ?: "字幕下载失败"
@@ -432,6 +467,7 @@ fun PlayerScreen(
         showSubtitleStyle = false
         showOnlineSearch = false
         showOnlineResults = false
+        showLocalBrowser = false
         rootFocus.requestFocus()
     }
 
@@ -571,9 +607,9 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(overlayVisible, interaction, showEpisodes, showSubtitles, showSpeed, showAspect, showSubtitleStyle, showOnlineSearch, showOnlineResults, isPlaying) {
+    LaunchedEffect(overlayVisible, interaction, showEpisodes, showSubtitles, showSpeed, showAspect, showSubtitleStyle, showOnlineSearch, showOnlineResults, showLocalBrowser, isPlaying) {
         if (overlayVisible && isPlaying && !showEpisodes && !showSubtitles && !showSpeed && !showAspect &&
-            !showSubtitleStyle && !showOnlineSearch && !showOnlineResults
+            !showSubtitleStyle && !showOnlineSearch && !showOnlineResults && !showLocalBrowser
         ) {
             delay(6_000)
             hideControls()
@@ -597,9 +633,10 @@ fun PlayerScreen(
             showSubtitles -> showSubtitles = false
             showSpeed -> showSpeed = false
             showAspect -> showAspect = false
-            showSubtitleStyle -> showSubtitleStyle = false
-            showOnlineSearch -> showOnlineSearch = false
-            showOnlineResults -> showOnlineResults = false
+            showSubtitleStyle -> { showSubtitleStyle = false; returnToSubtitleControl() }
+            showOnlineSearch -> { showOnlineSearch = false; returnToSubtitleControl() }
+            showOnlineResults -> { showOnlineResults = false; returnToSubtitleControl() }
+            showLocalBrowser -> { showLocalBrowser = false; returnToSubtitleControl() }
             overlayVisible -> hideControls()
             else -> {
                 saveCurrent()
@@ -621,9 +658,10 @@ fun PlayerScreen(
                         showSubtitles -> showSubtitles = false
                         showSpeed -> showSpeed = false
                         showAspect -> showAspect = false
-                        showSubtitleStyle -> showSubtitleStyle = false
-                        showOnlineSearch -> showOnlineSearch = false
-                        showOnlineResults -> showOnlineResults = false
+                        showSubtitleStyle -> { showSubtitleStyle = false; returnToSubtitleControl() }
+                        showOnlineSearch -> { showOnlineSearch = false; returnToSubtitleControl() }
+                        showOnlineResults -> { showOnlineResults = false; returnToSubtitleControl() }
+                        showLocalBrowser -> { showLocalBrowser = false; returnToSubtitleControl() }
                         overlayVisible -> hideControls()
                         else -> {
                             saveCurrent()
@@ -767,6 +805,7 @@ fun PlayerScreen(
                     progressFraction = progressFraction,
                     kidsMode = kidsMode,
                     playFocus = playFocus,
+                    subtitleFocus = subtitleFocus,
                     onTogglePlay = { togglePlay() },
                     onSeekBy = { seekBy(it) },
                     onPrev = { if (currentIndex > 0) switchTo(currentIndex - 1) },
@@ -809,6 +848,7 @@ fun PlayerScreen(
                                     }
                                     selectedSubtitle = null
                                     showSubtitles = false
+                                    returnToSubtitleControl()
                                 }
                             )
                         )
@@ -821,6 +861,7 @@ fun PlayerScreen(
                                         exoPlayer?.let { applySubtitle(it, option) }
                                         selectedSubtitle = option.label
                                         showSubtitles = false
+                                        returnToSubtitleControl()
                                     }
                                 )
                             )
@@ -835,6 +876,7 @@ fun PlayerScreen(
                                         manualSubtitle = null
                                         selectedSubtitle = null
                                         showSubtitles = false
+                                        returnToSubtitleControl()
                                         toast = "已移除本地字幕"
                                     }
                                 )
@@ -843,15 +885,7 @@ fun PlayerScreen(
                         add(
                             MenuOption("加载本地字幕", false) {
                                 showSubtitles = false
-                                subtitlePicker.launch(
-                                    arrayOf(
-                                        "application/x-subrip",
-                                        "text/x-ssa",
-                                        "text/vtt",
-                                        "text/plain",
-                                        "application/octet-stream"
-                                    )
-                                )
+                                openLocalSubtitleBrowser()
                             }
                         )
                         add(
@@ -874,7 +908,10 @@ fun PlayerScreen(
                             }
                         )
                     },
-                    onClose = { showSubtitles = false }
+                    onClose = {
+                        showSubtitles = false
+                        returnToSubtitleControl()
+                    }
                 )
             }
 
@@ -886,7 +923,10 @@ fun PlayerScreen(
                     onSize = viewModel::setSubtitleSize,
                     onBottom = viewModel::setSubtitleBottom,
                     onFont = viewModel::setSubtitleFont,
-                    onClose = { showSubtitleStyle = false }
+                    onClose = {
+                        showSubtitleStyle = false
+                        returnToSubtitleControl()
+                    }
                 )
             }
 
@@ -896,7 +936,10 @@ fun PlayerScreen(
                     loading = onlineLoading,
                     onQueryChange = { onlineQuery = it },
                     onSearch = { runSubtitleSearch() },
-                    onDismiss = { showOnlineSearch = false }
+                    onDismiss = {
+                        showOnlineSearch = false
+                        returnToSubtitleControl()
+                    }
                 )
             }
 
@@ -906,10 +949,23 @@ fun PlayerScreen(
                     loading = onlineLoading,
                     error = onlineError,
                     onPick = { loadOnlineSubtitle(it) },
-                    onClose = { showOnlineResults = false },
+                    onClose = {
+                        showOnlineResults = false
+                        returnToSubtitleControl()
+                    },
                     onSearchAgain = {
                         showOnlineResults = false
                         showOnlineSearch = true
+                    }
+                )
+            }
+
+            if (showLocalBrowser) {
+                LocalSubtitleBrowserPanel(
+                    onPick = ::pickLocalSubtitle,
+                    onClose = {
+                        showLocalBrowser = false
+                        returnToSubtitleControl()
                     }
                 )
             }
@@ -983,6 +1039,7 @@ private fun PlayerControlsOverlay(
     progressFraction: Float,
     kidsMode: Boolean,
     playFocus: FocusRequester,
+    subtitleFocus: FocusRequester,
     onTogglePlay: () -> Unit,
     onSeekBy: (Long) -> Unit,
     onPrev: () -> Unit,
@@ -1128,7 +1185,8 @@ private fun PlayerControlsOverlay(
                 PlayerControl(
                     icon = Icons.Rounded.Subtitles,
                     label = "字幕",
-                    onClick = onSubtitles
+                    onClick = onSubtitles,
+                    focusRequester = subtitleFocus
                 )
                 Spacer(Modifier.width(18.dp))
                 PlayerControl(
@@ -1469,23 +1527,35 @@ private fun OnlineSubtitleSearchDialog(
     onSearch: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val focus = remember { FocusRequester() }
+    var field by remember {
+        mutableStateOf(TextFieldValue(query, selection = TextRange(query.length)))
+    }
+    LaunchedEffect(query) {
+        if (field.text != query) {
+            field = TextFieldValue(query, selection = TextRange(query.length))
+        }
+    }
+    val searchFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         delay(120)
-        runCatching { focus.requestFocus() }
+        // 先把焦点放在“搜索”上，避免一进弹窗就弹键盘；需要改词时向上进入输入框。
+        runCatching { searchFocus.requestFocus() }
     }
     TvDialog(onDismiss = onDismiss, modifier = Modifier.width(760.dp)) {
         Text("搜索在线字幕", color = Color.White, style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            "默认用剧名搜索，可改成英文原名，例如 Numberblocks、Super Simple Songs。",
+            "默认用本集标题；搜不到会自动尝试剧名英文名。可以按“清空”后输入英文原名。",
             color = JuyingColors.TextSecondary,
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(18.dp))
         BasicTextField(
-            value = query,
-            onValueChange = onQueryChange,
+            value = field,
+            onValueChange = {
+                field = it
+                onQueryChange(it.text)
+            },
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
             cursorBrush = SolidColor(JuyingColors.Gold),
@@ -1493,7 +1563,6 @@ private fun OnlineSubtitleSearchDialog(
             keyboardActions = KeyboardActions(onSearch = { onSearch() }),
             modifier = Modifier
                 .fillMaxWidth()
-                .focusRequester(focus)
                 .clip(RoundedCornerShape(12.dp))
                 .background(JuyingColors.Surface)
                 .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
@@ -1501,9 +1570,189 @@ private fun OnlineSubtitleSearchDialog(
         )
         Spacer(Modifier.height(20.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TvButton(
+                "清空",
+                {
+                    field = TextFieldValue("")
+                    onQueryChange("")
+                },
+                primary = false
+            )
+            Spacer(Modifier.width(10.dp))
             TvButton("取消", onDismiss, primary = false)
             Spacer(Modifier.width(10.dp))
-            TvButton(if (loading) "搜索中…" else "搜索", onSearch, enabled = !loading)
+            TvButton(
+                if (loading) "搜索中…" else "搜索",
+                onSearch,
+                primary = true,
+                focusRequester = searchFocus,
+                enabled = !loading
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocalSubtitleBrowserPanel(
+    onPick: (File) -> Unit,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    val download = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+    val movies = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES)
+    val documents = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
+    val usbRoot = File("/storage")
+    val roots = remember {
+        listOf(
+            "下载" to download,
+            "影片" to movies,
+            "文档" to documents,
+            "U盘" to usbRoot
+        ).filter { it.second.exists() }
+    }
+    var currentDir by remember { mutableStateOf(roots.firstOrNull()?.second ?: usbRoot) }
+    var entries by remember { mutableStateOf<List<File>>(emptyList()) }
+    val firstFocus = remember { FocusRequester() }
+    val state = rememberTvLazyListState()
+
+    LaunchedEffect(currentDir) {
+        entries = withContext(Dispatchers.IO) {
+            runCatching {
+                currentDir.listFiles()
+                    ?.asSequence()
+                    ?.filter { it.isDirectory || it.extension.lowercase() in setOf("srt", "ass", "ssa", "vtt") }
+                    ?.filter { it.name != "emulated" && it.name != "self" }
+                    ?.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
+                    ?.take(500)
+                    ?.toList()
+                    .orEmpty()
+            }.getOrDefault(emptyList())
+        }
+        delay(80)
+        runCatching { firstFocus.requestFocus() }
+    }
+    BackHandler { onClose() }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.48f)))
+        Column(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 36.dp, bottom = 80.dp)
+                .width(760.dp)
+                .fillMaxHeight(0.78f)
+                .clip(RoundedCornerShape(18.dp))
+                .background(Color(0xF0101A28))
+                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(18.dp))
+                .padding(18.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("本地字幕", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        currentDir.absolutePath,
+                        color = JuyingColors.TextMuted,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                TvButton(
+                    "关闭",
+                    onClose,
+                    primary = false,
+                    focusRequester = if (entries.isEmpty()) firstFocus else null
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                roots.forEach { (label, dir) ->
+                    TvChip(text = label, selected = currentDir == dir, onClick = { currentDir = dir })
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            val parent = currentDir.parentFile
+            if (parent != null && currentDir != usbRoot) {
+                FocusableSurface(
+                    onClick = { currentDir = parent },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(9.dp),
+                    backgroundColor = JuyingColors.Surface.copy(alpha = 0.35f),
+                    focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                    borderColor = JuyingColors.Outline.copy(alpha = 0.5f)
+                ) {
+                    Text(
+                        "返回上一级",
+                        color = JuyingColors.Gold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+            if (entries.isEmpty()) {
+                Text(
+                    "这个文件夹里没有字幕文件。可以把 .srt/.ass 放到 U 盘或“下载”文件夹。",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(12.dp)
+                )
+            } else {
+                TvLazyColumn(
+                    state = state,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(entries, key = { it.absolutePath }) { file ->
+                        FocusableSurface(
+                            onClick = {
+                                if (file.isDirectory) currentDir = file else onPick(file)
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (file.absolutePath == entries.firstOrNull()?.absolutePath) {
+                                        Modifier.focusRequester(firstFocus)
+                                    } else {
+                                        Modifier
+                                    }
+                                ),
+                            shape = RoundedCornerShape(9.dp),
+                            backgroundColor = if (file.isDirectory) JuyingColors.Surface.copy(alpha = 0.3f) else JuyingColors.Surface.copy(alpha = 0.45f),
+                            focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                            borderColor = JuyingColors.Outline.copy(alpha = 0.45f)
+                        ) {
+                            Row(
+                                Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    if (file.isDirectory) "目录" else file.extension.uppercase(),
+                                    color = if (file.isDirectory) JuyingColors.Gold else JuyingColors.Blue,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.width(52.dp)
+                                )
+                                Text(
+                                    file.name + if (file.isDirectory) "/" else "",
+                                    color = JuyingColors.TextPrimary,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (!file.isDirectory) {
+                                    Text(
+                                        "${(file.length() / 1024).coerceAtLeast(1)} KB",
+                                        color = JuyingColors.TextMuted,
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1603,7 +1852,10 @@ private fun OnlineSubtitleResultPanel(
     }
 }
 
-private fun subtitleSearchQuery(seriesTitle: String, episodeTitle: String): String {
+private fun subtitleSearchQuery(seriesTitle: String, episodeTitle: String): String =
+    episodeTitle.trim().ifBlank { subtitleSeriesAlias(seriesTitle) }
+
+private fun subtitleSeriesAlias(seriesTitle: String): String {
     val lower = seriesTitle.lowercase()
     return when {
         "字母积木" in seriesTitle -> "Alphablocks"
@@ -1617,7 +1869,6 @@ private fun subtitleSearchQuery(seriesTitle: String, episodeTitle: String): Stri
         else -> seriesTitle
             .replace(Regex("""\s*[（(]?S\d+(\s*-\s*\d+)?[)）]?\s*$"""), "")
             .trim()
-            .ifBlank { episodeTitle }
     }
 }
 
