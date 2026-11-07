@@ -15,6 +15,11 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.border
@@ -86,6 +91,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -821,7 +827,11 @@ fun PlayerScreen(
                 )
             }
 
-            if (showEpisodes) {
+            AnimatedVisibility(
+                visible = showEpisodes,
+                enter = fadeIn(tween(160)) + slideInHorizontally(tween(180)) { it / 8 },
+                exit = fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { it / 8 }
+            ) {
                 EpisodePanel(
                     bundle = bundle,
                     currentIndex = currentIndex,
@@ -831,7 +841,11 @@ fun PlayerScreen(
                 )
             }
 
-            if (showSubtitles) {
+            AnimatedVisibility(
+                visible = showSubtitles,
+                enter = fadeIn(tween(160)) + slideInHorizontally(tween(180)) { it / 8 },
+                exit = fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { it / 8 }
+            ) {
                 PlayerMenu(
                     title = "字幕",
                     options = buildList {
@@ -915,7 +929,11 @@ fun PlayerScreen(
                 )
             }
 
-            if (showSubtitleStyle) {
+            AnimatedVisibility(
+                visible = showSubtitleStyle,
+                enter = fadeIn(tween(160)) + slideInHorizontally(tween(180)) { it / 8 },
+                exit = fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { it / 8 }
+            ) {
                 SubtitleStylePanel(
                     sizeSp = subtitleSize,
                     bottomPercent = subtitleBottom,
@@ -943,7 +961,11 @@ fun PlayerScreen(
                 )
             }
 
-            if (showOnlineResults) {
+            AnimatedVisibility(
+                visible = showOnlineResults,
+                enter = fadeIn(tween(160)) + slideInHorizontally(tween(180)) { it / 8 },
+                exit = fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { it / 8 }
+            ) {
                 OnlineSubtitleResultPanel(
                     results = onlineResults,
                     loading = onlineLoading,
@@ -960,7 +982,11 @@ fun PlayerScreen(
                 )
             }
 
-            if (showLocalBrowser) {
+            AnimatedVisibility(
+                visible = showLocalBrowser,
+                enter = fadeIn(tween(160)) + slideInHorizontally(tween(180)) { it / 8 },
+                exit = fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { it / 8 }
+            ) {
                 LocalSubtitleBrowserPanel(
                     onPick = ::pickLocalSubtitle,
                     onClose = {
@@ -1013,16 +1039,23 @@ fun PlayerScreen(
             }
         }
 
-        toast?.let { text ->
+        AnimatedVisibility(
+            visible = toast != null,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp),
+            enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { it / 2 },
+            exit = fadeOut(tween(120)) + slideOutVertically(tween(140)) { it / 2 }
+        ) {
             Box(
                 Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 150.dp)
                     .clip(RoundedCornerShape(50))
                     .background(Color.Black.copy(alpha = 0.75f))
                     .padding(horizontal = 18.dp, vertical = 9.dp)
             ) {
-                Text(text, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    toast.orEmpty(),
+                    color = JuyingColors.TextPrimary,
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }
@@ -1466,45 +1499,80 @@ private fun SubtitleStylePanel(
         Column(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 36.dp, bottom = 110.dp)
-                .width(640.dp)
-                .clip(RoundedCornerShape(18.dp))
+                .padding(end = 36.dp, bottom = 100.dp)
+                .width(860.dp)
+                .clip(RoundedCornerShape(22.dp))
                 .background(Color(0xF0101A28))
-                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(18.dp))
-                .padding(20.dp)
+                .border(1.dp, JuyingColors.Outline.copy(alpha = 0.85f), RoundedCornerShape(22.dp))
+                .padding(24.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("字幕设置", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.weight(1f))
+                Column(Modifier.weight(1f)) {
+                    Text("字幕样式", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "调整后立即生效，并自动保存",
+                        color = JuyingColors.TextMuted,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 TvButton("关闭", onClose, primary = false)
             }
             Spacer(Modifier.height(16.dp))
-            Text("字号", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                val sizes = listOf(20, 24, 28, 32, 36)
-                val firstSize = if (sizeSp in sizes) sizeSp else sizes.first()
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(104.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF1B2C44), Color(0xFF0D1725))
+                        )
+                    )
+                    .border(1.dp, JuyingColors.Outline.copy(alpha = 0.7f), RoundedCornerShape(14.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "字幕预览 · 你好 Aa",
+                    color = Color.White,
+                    fontSize = (sizeSp * 0.78f).coerceIn(18f, 34f).sp,
+                    fontFamily = subtitleFontFamily(font),
+                    fontWeight = if (font == "bold") FontWeight.Bold else FontWeight.SemiBold,
+                    maxLines = 1
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+            val sizes = listOf(20, 24, 28, 32, 36)
+            val firstSize = if (sizeSp in sizes) sizeSp else sizes.first()
+            StyleSettingRow("字号", "${sizeSp}sp") {
                 sizes.forEach { size ->
                     TvChip(
                         text = "${size}",
                         selected = sizeSp == size,
                         onClick = { onSize(size) },
+                        modifier = Modifier.weight(1f),
+                        centered = true,
                         focusRequester = if (size == firstSize) firstFocus else null
                     )
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Text("位置", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(8 to "低", 14 to "偏低", 20 to "标准", 28 to "偏高", 36 to "高").forEach { (value, label) ->
-                    TvChip(text = label, selected = bottomPercent == value, onClick = { onBottom(value) })
+            StyleSettingRow("位置", positionLabel(bottomPercent)) {
+                listOf(
+                    8 to "低",
+                    14 to "偏低",
+                    20 to "标准",
+                    28 to "偏高",
+                    36 to "高"
+                ).forEach { (value, label) ->
+                    TvChip(
+                        text = label,
+                        selected = bottomPercent == value,
+                        onClick = { onBottom(value) },
+                        modifier = Modifier.weight(1f),
+                        centered = true
+                    )
                 }
             }
-            Spacer(Modifier.height(16.dp))
-            Text("字体", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
-            Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            StyleSettingRow("字体", fontLabel(font)) {
                 listOf(
                     "default" to "默认",
                     "sans" to "黑体",
@@ -1512,11 +1580,61 @@ private fun SubtitleStylePanel(
                     "mono" to "等宽",
                     "bold" to "粗黑"
                 ).forEach { (value, label) ->
-                    TvChip(text = label, selected = font == value, onClick = { onFont(value) })
+                    TvChip(
+                        text = label,
+                        selected = font == value,
+                        onClick = { onFont(value) },
+                        modifier = Modifier.weight(1f),
+                        centered = true
+                    )
                 }
             }
         }
     }
+}
+
+@Composable
+private fun StyleSettingRow(
+    label: String,
+    value: String,
+    content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(Modifier.width(96.dp)) {
+            Text(label, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+            Text(value, color = JuyingColors.Gold, style = MaterialTheme.typography.labelSmall)
+        }
+        Row(
+            Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            content = content
+        )
+    }
+}
+
+private fun positionLabel(percent: Int): String = when (percent) {
+    8 -> "低"
+    14 -> "偏低"
+    20 -> "标准"
+    28 -> "偏高"
+    else -> "高"
+}
+
+private fun fontLabel(font: String): String = when (font) {
+    "sans" -> "黑体"
+    "serif" -> "宋体"
+    "mono" -> "等宽"
+    "bold" -> "粗黑"
+    else -> "默认"
+}
+
+private fun subtitleFontFamily(font: String): FontFamily = when (font) {
+    "serif" -> FontFamily.Serif
+    "mono" -> FontFamily.Monospace
+    else -> FontFamily.SansSerif
 }
 
 @Composable

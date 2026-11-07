@@ -48,8 +48,8 @@ class SettingsStore(private val context: Context) {
     val mcpEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.mcpEnabled] ?: false }
     val mcpToken: Flow<String> = context.settingsDataStore.data.map { it[Keys.mcpToken].orEmpty() }
     val mcpPort: Flow<Int> = context.settingsDataStore.data.map { it[Keys.mcpPort] ?: 8787 }
-    val subtitleSize: Flow<Int> = context.settingsDataStore.data.map { it[Keys.subtitleSize] ?: 26 }
-    val subtitleBottom: Flow<Int> = context.settingsDataStore.data.map { it[Keys.subtitleBottom] ?: 18 }
+    val subtitleSize: Flow<Int> = context.settingsDataStore.data.map { it[Keys.subtitleSize] ?: 28 }
+    val subtitleBottom: Flow<Int> = context.settingsDataStore.data.map { it[Keys.subtitleBottom] ?: 20 }
     val subtitleFont: Flow<String> = context.settingsDataStore.data.map { it[Keys.subtitleFont] ?: "default" }
     val aiApiKeys: Flow<Map<String, String>> = context.settingsDataStore.data.map { prefs ->
         val raw = prefs[Keys.aiKeys].orEmpty()

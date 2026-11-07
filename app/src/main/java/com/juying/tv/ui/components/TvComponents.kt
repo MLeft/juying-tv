@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -110,22 +111,22 @@ fun FocusableSurface(
     val interaction = remember { MutableInteractionSource() }
     val scale by animateFloatAsState(
         targetValue = if (focused) focusedScale else 1f,
-        animationSpec = tween(160),
+        animationSpec = spring(dampingRatio = 0.72f, stiffness = 560f),
         label = "focusScale"
     )
     val elevation by animateDpAsState(
         targetValue = if (focused) 18.dp else 0.dp,
-        animationSpec = tween(160),
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 520f),
         label = "focusElevation"
     )
     val border by androidx.compose.animation.animateColorAsState(
         targetValue = if (focused) focusedBorderColor else borderColor,
-        animationSpec = tween(160),
+        animationSpec = tween(150),
         label = "focusBorder"
     )
     val background by androidx.compose.animation.animateColorAsState(
         targetValue = if (focused) focusedBackgroundColor else backgroundColor,
-        animationSpec = tween(160),
+        animationSpec = tween(150),
         label = "focusBackground"
     )
 
@@ -207,9 +208,15 @@ fun TvChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     focusRequester: FocusRequester? = null,
-    icon: ImageVector? = null
+    icon: ImageVector? = null,
+    centered: Boolean = false
 ) {
     val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
+    val contentColor by androidx.compose.animation.animateColorAsState(
+        targetValue = if (selected) JuyingColors.Gold else JuyingColors.TextSecondary,
+        animationSpec = androidx.compose.animation.core.tween(150),
+        label = "chipContent"
+    )
     FocusableSurface(
         onClick = onClick,
         modifier = base.height(44.dp),
@@ -221,25 +228,27 @@ fun TvChip(
         focusedBorderColor = JuyingColors.Gold
     ) {
         Row(
-            modifier = Modifier
-                .padding(horizontal = 16.dp)
+            modifier = (if (centered) Modifier.fillMaxWidth() else Modifier)
+                .padding(horizontal = if (centered) 8.dp else 16.dp)
                 .fillMaxHeight(),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (centered) Arrangement.Center else Arrangement.Start
         ) {
             if (icon != null) {
                 Icon(
                     icon,
                     contentDescription = null,
-                    tint = if (selected) JuyingColors.Gold else JuyingColors.TextSecondary,
+                    tint = contentColor,
                     modifier = Modifier.size(18.dp)
                 )
                 Spacer(Modifier.width(7.dp))
             }
             Text(
                 text,
-                color = if (selected) JuyingColors.Gold else JuyingColors.TextSecondary,
+                color = contentColor,
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start,
                 maxLines = 1
             )
         }
