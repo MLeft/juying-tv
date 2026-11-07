@@ -74,9 +74,13 @@ data class SeriesEntity(
         get() {
             val custom = customTitle?.takeIf { it.isNotBlank() }
             if (custom != null) return custom
-            val stripped = autoTitle.replace(Regex("""^\d{1,3}[.\s_-]+(?=\S)"""), "").trim()
+            val stripped = autoTitle.replace(TITLE_PREFIX, "").trim()
             return stripped.ifBlank { autoTitle }
         }
+
+    companion object {
+        private val TITLE_PREFIX = Regex("""^\d{1,3}[.\s_-]+(?=\S)""")
+    }
 }
 
 @Entity(

@@ -73,6 +73,7 @@ import com.juying.tv.ui.components.Badge
 import com.juying.tv.ui.components.CheckMark
 import com.juying.tv.ui.components.EmptyState
 import com.juying.tv.ui.components.FocusableSurface
+import com.juying.tv.ui.components.LoadingPane
 import com.juying.tv.ui.components.ProgressLine
 import com.juying.tv.ui.components.SeriesArtwork
 import com.juying.tv.ui.components.TogglePill
@@ -145,14 +146,28 @@ fun SeriesDetailScreen(
         if (showEdit) memberships = viewModel.collectionsForSeries(seriesId).toSet()
     }
 
+    var showMissing by remember(seriesId) { mutableStateOf(false) }
+    LaunchedEffect(seriesId, series) {
+        if (series == null) {
+            delay(500)
+            if (series == null) showMissing = true
+        } else {
+            showMissing = false
+        }
+    }
+
     val current = series
     if (current == null) {
-        EmptyState(
-            title = "内容不存在",
-            description = "该剧集可能已被移除或重新扫描。",
-            actionText = "返回",
-            action = onBack
-        )
+        if (!showMissing) {
+            LoadingPane(Modifier.fillMaxSize())
+        } else {
+            EmptyState(
+                title = "内容不存在",
+                description = "该剧集可能已被移除或重新扫描。",
+                actionText = "返回",
+                action = onBack
+            )
+        }
         return
     }
 

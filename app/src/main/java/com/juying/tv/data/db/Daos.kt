@@ -108,6 +108,9 @@ interface MediaDao {
     @Query("SELECT * FROM media WHERE seriesId = :seriesId ORDER BY season ASC, episode ASC, sortIndex ASC")
     suspend fun allBySeries(seriesId: String): List<MediaEntity>
 
+    @Query("SELECT * FROM media WHERE seriesId = :seriesId AND hidden = 0 ORDER BY season ASC, episode ASC, sortIndex ASC LIMIT 1")
+    suspend fun firstVisibleBySeries(seriesId: String): MediaEntity?
+
     @Query("SELECT * FROM media WHERE seriesId = :seriesId AND hidden = 0 ORDER BY season ASC, episode ASC, sortIndex ASC")
     fun observeAllBySeries(seriesId: String): Flow<List<MediaEntity>>
 

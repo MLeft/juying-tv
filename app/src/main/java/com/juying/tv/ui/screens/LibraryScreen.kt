@@ -40,12 +40,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -104,11 +106,12 @@ fun LibraryScreen(
 
     val visible = if (kidsMode) kidsSeries else allSeries
     val visibleById = remember(visible) { visible.associateBy { it.id } }
-    var tab by remember { mutableStateOf(if (kidsMode) LibraryTab.ALL else LibraryTab.COLLECTIONS) }
+    var tabName by rememberSaveable { mutableStateOf(if (kidsMode) LibraryTab.ALL.name else LibraryTab.COLLECTIONS.name) }
+    val tab = LibraryTab.valueOf(tabName)
     var showCreate by remember { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var kindFilter by remember { mutableStateOf("ALL") }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var kindFilter by rememberSaveable { mutableStateOf("ALL") }
     var deleteTarget by remember { mutableStateOf<CollectionEntity?>(null) }
     val filtered = remember(visible, searchQuery, kindFilter) {
         visible.filter { series ->
@@ -167,7 +170,7 @@ fun LibraryScreen(
                     TvChip(
                         text = item.label,
                         selected = tab == item,
-                        onClick = { tab = item },
+                        onClick = { tabName = item.name },
                         focusRequester = if (index == 0) firstTabFocus else null
                     )
                 }
@@ -376,6 +379,14 @@ private fun CollectionsContent(
         return
     }
 
+    val seriesByCollection = remember(collectionItems, seriesById) {
+        collectionItems.groupBy { it.collectionId }.mapValues { (_, items) ->
+            items.sortedBy { it.sortIndex }.mapNotNull { seriesById[it.seriesId] }
+        }
+    }
+    val restoreCollectionId = com.juying.tv.ui.NavFocusMemory.collectionId
+    val restoreCollection = collections.firstOrNull { it.id == restoreCollectionId } ?: collections.firstOrNull()
+
     TvLazyVerticalGrid(
         columns = TvGridCells.Fixed(3),
         state = rememberTvLazyGridState(),
@@ -387,15 +398,12 @@ private fun CollectionsContent(
         val collectionTotal = collections.size + 1
         val lastCollectionRowStart = ((collectionTotal - 1) / 3) * 3
         itemsIndexed(collections, key = { _, it -> it.id }) { index, collection ->
-            val series = collectionItems
-                .filter { it.collectionId == collection.id }
-                .sortedBy { it.sortIndex }
-                .mapNotNull { seriesById[it.seriesId] }
             CollectionCard(
                 collection = collection,
-                series = series,
+                series = seriesByCollection[collection.id].orEmpty(),
                 onClick = { onOpenCollection(collection.id) },
-                modifier = if (index >= lastCollectionRowStart) Modifier.blockDownAtBottom() else Modifier
+                modifier = if (index >= lastCollectionRowStart) Modifier.blockDownAtBottom() else Modifier,
+                focusRequester = if (collection.id == restoreCollection?.id) firstContentFocus else null
             )
         }
         item(key = "create") {
@@ -436,12 +444,20 @@ private fun CollectionCard(
     collection: CollectionEntity,
     series: List<SeriesEntity>,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null
 ) {
+    val surfaceModifier = Modifier
+        .fillMaxWidth()
+        .aspectRatio(16f / 8.4f)
+        .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+        .onFocusChanged {
+            if (it.isFocused) com.juying.tv.ui.NavFocusMemory.collectionId = collection.id
+        }
     Column(modifier.padding(vertical = 4.dp)) {
         FocusableSurface(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 8.4f),
+            modifier = surfaceModifier,
             shape = RoundedCornerShape(18.dp),
             focusedScale = 1.035f
         ) {
@@ -528,12 +544,14 @@ private fun AllSeriesGrid(
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
         val lastSeriesRowStart = ((series.size - 1) / 6) * 6
+        val restoreId = com.juying.tv.ui.NavFocusMemory.seriesId
+        val restoreSeries = series.firstOrNull { it.id == restoreId } ?: series.firstOrNull()
         itemsIndexed(series, key = { _, it -> it.id }) { index, item ->
             PosterCard(
                 series = item,
                 onClick = { onOpenSeries(item.id) },
                 modifier = if (index >= lastSeriesRowStart) Modifier.blockDownAtBottom() else Modifier,
-                focusRequester = if (item.id == series.firstOrNull()?.id) firstFocus else null
+                focusRequester = if (item.id == restoreSeries?.id) firstFocus else null
             )
         }
     }

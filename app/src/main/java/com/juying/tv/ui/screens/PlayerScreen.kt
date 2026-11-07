@@ -97,7 +97,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items
+import androidx.tv.foundation.lazy.list.itemsIndexed
 import androidx.tv.foundation.lazy.list.rememberTvLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.JuyingApp
@@ -413,11 +413,13 @@ fun PlayerScreen(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    LaunchedEffect(exoPlayer, resolved?.mediaId) {
-        if (exoPlayer != null) {
+    LaunchedEffect(exoPlayer, resolved?.mediaId, overlayVisible, isPlaying) {
+        val player = exoPlayer ?: return@LaunchedEffect
+        positionMs = player.currentPosition
+        durationMs = player.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: durationMs
+        if (overlayVisible && isPlaying) {
             while (isActive) {
-                positionMs = exoPlayer.currentPosition
-                durationMs = exoPlayer.duration.takeIf { it > 0 && it != C.TIME_UNSET } ?: durationMs
+                positionMs = player.currentPosition
                 delay(500)
             }
         }
@@ -790,7 +792,9 @@ private fun PlayerControlsOverlay(
 ) {
     val series = bundle?.series
     val episode = bundle?.episodes?.getOrNull(currentIndex)
-    val multiSeason = bundle?.episodes.orEmpty().map { it.season }.distinct().size > 1
+    val multiSeason = remember(bundle) {
+        bundle?.episodes.orEmpty().map { it.season }.distinct().size > 1
+    }
     val episodeLabel = when {
         series == null || episode == null -> ""
         series.kind == SeriesKind.MOVIE -> "电影"
@@ -987,7 +991,7 @@ private fun EpisodePanel(
     onClose: () -> Unit
 ) {
     val episodes = bundle?.episodes.orEmpty()
-    val multiSeason = episodes.map { it.season }.distinct().size > 1
+    val multiSeason = remember(episodes) { episodes.map { it.season }.distinct().size > 1 }
     val firstFocus = remember { FocusRequester() }
     val state = rememberTvLazyListState(
         initialFirstVisibleItemIndex = (currentIndex - 2).coerceAtLeast(0)
@@ -1036,8 +1040,7 @@ private fun EpisodePanel(
                 contentPadding = PaddingValues(bottom = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(episodes, key = { it.id }) { item ->
-                    val index = episodes.indexOfFirst { it.id == item.id }
+                itemsIndexed(episodes, key = { _, it -> it.id }) { index, item ->
                     val current = index == currentIndex
                     FocusableSurface(
                         onClick = { onSelect(index) },

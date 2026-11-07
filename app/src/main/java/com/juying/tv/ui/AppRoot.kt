@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -104,7 +105,7 @@ fun AppRoot(viewModel: AppViewModel) {
             val summary = scanState?.summary
             if (!summary.isNullOrBlank()) {
                 message = summary
-                viewModel.dismissScanBanner()
+                if (scanState?.error == null) viewModel.dismissScanBanner()
             }
         }
     }
@@ -126,6 +127,7 @@ fun AppRoot(viewModel: AppViewModel) {
     val showRail = current !is Screen.Player
 
     val coordinator = remember { FocusCoordinator() }
+    val screenStateHolder = rememberSaveableStateHolder()
     CompositionLocalProvider(LocalFocusCoordinator provides coordinator) {
         Box(
             Modifier
@@ -146,8 +148,7 @@ fun AppRoot(viewModel: AppViewModel) {
                             AndroidKeyEvent.KEYCODE_DPAD_CENTER,
                             AndroidKeyEvent.KEYCODE_ENTER,
                             AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                                coordinator.restore()
-                                true
+                                return@onPreviewKeyEvent coordinator.restore()
                             }
                             else -> false
                         }
@@ -178,7 +179,9 @@ fun AppRoot(viewModel: AppViewModel) {
             }
 
             Box(Modifier.weight(1f).fillMaxSize()) {
-                when (val screen = current) {
+                val screen = current
+                screenStateHolder.SaveableStateProvider(screen.saveKey) {
+                    when (screen) {
                     Screen.Home -> HomeScreen(
                         viewModel = viewModel,
                         kidsMode = kidsMode,
@@ -260,6 +263,7 @@ fun AppRoot(viewModel: AppViewModel) {
                         fromStart = screen.fromStart,
                         onBack = { pop() }
                     )
+                }
                 }
 
                 if (current !is Screen.Player && scanState?.running == true) {

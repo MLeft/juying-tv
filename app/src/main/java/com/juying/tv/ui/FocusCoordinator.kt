@@ -37,8 +37,10 @@ class FocusCoordinator {
         }
     }
 
-    fun restore() {
-        restoreAction?.invoke()
+    fun restore(): Boolean {
+        val action = restoreAction ?: return false
+        action()
+        return true
     }
 }
 

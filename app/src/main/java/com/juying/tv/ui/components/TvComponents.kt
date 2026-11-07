@@ -1006,6 +1006,11 @@ fun PhoneAssistDialog(
     val result by server.result.collectAsStateWithLifecycle()
     val error by server.error.collectAsStateWithLifecycle()
     val bitmap = remember(url) { url?.let { generateQrBitmap(it, 480) } }
+    val cancelFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(120)
+        runCatching { cancelFocus.requestFocus() }
+    }
 
     androidx.compose.runtime.DisposableEffect(Unit) {
         server.startServer()
@@ -1070,7 +1075,7 @@ fun PhoneAssistDialog(
         }
         Spacer(Modifier.height(26.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TvButton("取消", onDismiss, primary = false)
+            TvButton("取消", onDismiss, primary = false, focusRequester = cancelFocus)
         }
     }
 }
@@ -1085,7 +1090,8 @@ fun PosterCard(
     topBadge: String? = null,
     selected: Boolean? = null
 ) {
-    val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
+    val base = (if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier)
+        .onFocusChanged { if (it.isFocused) com.juying.tv.ui.NavFocusMemory.seriesId = series.id }
     FocusableSurface(
         onClick = onClick,
         modifier = base.aspectRatio(2f / 3f),
