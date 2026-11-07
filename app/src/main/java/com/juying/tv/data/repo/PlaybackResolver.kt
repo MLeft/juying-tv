@@ -234,12 +234,52 @@ class PlaybackResolver(
         }
     }
 
+    /** 拖动/快进时抽取目标时间附近的画面，失败时回退到首集缩略图。 */
+    suspend fun seekPreview(mediaId: String, positionMs: Long): File? = withContext(Dispatchers.IO) {
+        val bucket = (positionMs / 5_000).coerceAtLeast(0)
+        val dir = File(context.filesDir, "seek_thumbs").apply { mkdirs() }
+        val cache = File(dir, "${sha256("$mediaId:$bucket").take(32)}.jpg")
+        if (cache.exists() && cache.length() > 0) return@withContext cache
+        val resolved = runCatching { resolve(mediaId, ignoreProgress = true) }.getOrNull()
+            ?: return@withContext episodeThumbnail(mediaId)
+        val retriever = MediaMetadataRetriever()
+        try {
+            if (resolved.headers.isEmpty()) {
+                retriever.setDataSource(context, Uri.parse(resolved.url))
+            } else {
+                retriever.setDataSource(resolved.url, resolved.headers)
+            }
+            val bitmap = retriever.getScaledFrameAtTime(
+                positionMs * 1_000,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+                480,
+                270
+            ) ?: return@withContext episodeThumbnail(mediaId)
+            try {
+                java.io.FileOutputStream(cache).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                }
+                cache
+            } finally {
+                bitmap.recycle()
+            }
+        } catch (e: Exception) {
+            runCatching { episodeThumbnail(mediaId) }.getOrNull()
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
     /** 控制首集/选集缩略图缓存占用，按最久未使用淘汰。 */
     suspend fun pruneThumbCache(maxBytes: Long = 200L * 1024 * 1024) = withContext(Dispatchers.IO) {
-        val dir = File(context.filesDir, "episode_thumbs")
-        val files = dir.listFiles()?.filter { it.isFile } ?: return@withContext
+        pruneDir(File(context.filesDir, "episode_thumbs"), maxBytes)
+        pruneDir(File(context.filesDir, "seek_thumbs"), 60L * 1024 * 1024)
+    }
+
+    private fun pruneDir(dir: File, maxBytes: Long) {
+        val files = dir.listFiles()?.filter { it.isFile } ?: return
         var total = files.sumOf { it.length() }
-        if (total <= maxBytes) return@withContext
+        if (total <= maxBytes) return
         files.sortedBy { it.lastModified() }.forEach { file ->
             if (total > maxBytes) {
                 val size = file.length()

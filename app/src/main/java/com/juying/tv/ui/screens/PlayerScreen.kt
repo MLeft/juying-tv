@@ -53,6 +53,7 @@ import androidx.compose.material.icons.rounded.AspectRatio
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.HighQuality
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PlaylistPlay
@@ -82,6 +83,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -146,6 +148,7 @@ import com.juying.tv.util.formatDuration
 import com.juying.tv.util.formatEpisode
 import com.juying.tv.util.formatSpeed
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -164,6 +167,26 @@ private data class MenuOption(
     val selected: Boolean,
     val onClick: () -> Unit
 )
+
+private data class VideoInfo(
+    val width: Int,
+    val height: Int,
+    val bitrate: Int,
+    val codec: String,
+    val frameRate: Float
+)
+
+private data class VideoQuality(
+    val width: Int,
+    val height: Int,
+    val bitrate: Int
+) {
+    val label: String
+        get() = buildString {
+            append(if (height > 0) "${height}p" else "自动")
+            if (bitrate > 0) append(" · ${"%.1f".format(bitrate / 1_000_000f)} Mbps")
+        }
+}
 
 @Composable
 fun PlayerScreen(
@@ -194,6 +217,10 @@ fun PlayerScreen(
     var showSubtitles by remember { mutableStateOf(false) }
     var showSpeed by remember { mutableStateOf(false) }
     var showAspect by remember { mutableStateOf(false) }
+    var showQuality by remember { mutableStateOf(false) }
+    var videoInfo by remember { mutableStateOf<VideoInfo?>(null) }
+    var videoQualities by remember { mutableStateOf<List<VideoQuality>>(emptyList()) }
+    var autoQuality by remember { mutableStateOf(true) }
     var showSubtitleStyle by remember { mutableStateOf(false) }
     var showOnlineSearch by remember { mutableStateOf(false) }
     var showOnlineResults by remember { mutableStateOf(false) }
@@ -203,6 +230,11 @@ fun PlayerScreen(
     var onlineResults by remember { mutableStateOf<List<OnlineSubtitle>>(emptyList()) }
     var manualSubtitle by remember { mutableStateOf<SubtitleSpec?>(null) }
     var pendingSeekMs by remember { mutableStateOf<Long?>(null) }
+    var seekHudVisible by remember { mutableStateOf(false) }
+    var seekPreview by remember { mutableStateOf<File?>(null) }
+    var seekDirection by remember { mutableStateOf("") }
+    var seekTick by remember { mutableIntStateOf(0) }
+    var seekPreviewJob by remember { mutableStateOf<Job?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
     var playerResizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var speed by remember { mutableFloatStateOf(1f) }
@@ -216,6 +248,7 @@ fun PlayerScreen(
     val rootFocus = remember { FocusRequester() }
     val playFocus = remember { FocusRequester() }
     val subtitleFocus = remember { FocusRequester() }
+    val seekBarFocus = remember { FocusRequester() }
     val progressFraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
     var showLocalBrowser by remember { mutableStateOf(false) }
@@ -360,6 +393,18 @@ fun PlayerScreen(
         val target = (player.currentPosition + deltaMs).coerceIn(0L, max)
         player.seekTo(target)
         positionMs = target
+        seekDirection = if (deltaMs >= 0) "前进 ${deltaMs / 1000} 秒" else "后退 ${-deltaMs / 1000} 秒"
+        seekHudVisible = true
+        seekTick++
+        interaction++
+        val media = resolved?.mediaId
+        seekPreviewJob?.cancel()
+        if (media != null) {
+            seekPreviewJob = scope.launch {
+                delay(180)
+                seekPreview = runCatching { viewModel.seekPreview(media, target) }.getOrNull()
+            }
+        }
     }
 
     fun togglePlay() {
@@ -374,6 +419,20 @@ fun PlayerScreen(
             player.play()
         }
         interaction++
+    }
+
+    fun applyVideoQuality(quality: VideoQuality?) {
+        val player = exoPlayer ?: return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(
+                quality?.width ?: Int.MAX_VALUE,
+                quality?.height ?: Int.MAX_VALUE
+            )
+            .setMaxVideoBitrate(quality?.bitrate?.takeIf { it > 0 } ?: Int.MAX_VALUE)
+            .build()
+        autoQuality = quality == null
+        showQuality = false
+        toast = if (quality == null) "已切换为自动画质" else "已限制为 ${quality.label}"
     }
 
     fun switchTo(targetIndex: Int) {
@@ -491,6 +550,7 @@ fun PlayerScreen(
         showSubtitles = false
         showSpeed = false
         showAspect = false
+        showQuality = false
         showSubtitleStyle = false
         showOnlineSearch = false
         showOnlineResults = false
@@ -556,6 +616,29 @@ fun PlayerScreen(
                 override fun onTracksChanged(tracks: Tracks) {
                     val options = buildSubtitleOptions(tracks)
                     subtitleOptions = options
+                    val formats = tracks.groups
+                        .filter { it.type == C.TRACK_TYPE_VIDEO }
+                        .flatMap { group ->
+                            (0 until group.length).mapNotNull { index ->
+                                runCatching { group.getTrackFormat(index) }.getOrNull()
+                            }
+                        }
+                        .filter { it.width > 0 && it.height > 0 }
+                        .distinctBy { it.height to it.bitrate }
+                        .sortedByDescending { it.height * 10_000L + it.bitrate }
+                    videoQualities = formats.map {
+                        VideoQuality(it.width, it.height, it.bitrate)
+                    }
+                    val current = player.videoFormat ?: formats.firstOrNull()
+                    videoInfo = current?.let {
+                        VideoInfo(
+                            width = it.width,
+                            height = it.height,
+                            bitrate = it.bitrate,
+                            codec = it.codecs.orEmpty(),
+                            frameRate = it.frameRate
+                        )
+                    }
                     val r = resolved
                     if (!autoSubtitleApplied && options.isNotEmpty() &&
                         (r?.subtitles.isNullOrEmpty().not() || manualSubtitle != null)
@@ -634,12 +717,20 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(overlayVisible, interaction, showEpisodes, showSubtitles, showSpeed, showAspect, showSubtitleStyle, showOnlineSearch, showOnlineResults, showLocalBrowser, isPlaying) {
-        if (overlayVisible && isPlaying && !showEpisodes && !showSubtitles && !showSpeed && !showAspect &&
+    LaunchedEffect(overlayVisible, interaction, showEpisodes, showSubtitles, showSpeed, showAspect, showQuality, showSubtitleStyle, showOnlineSearch, showOnlineResults, showLocalBrowser, isPlaying) {
+        if (overlayVisible && isPlaying && !showEpisodes && !showSubtitles && !showSpeed && !showAspect && !showQuality &&
             !showSubtitleStyle && !showOnlineSearch && !showOnlineResults && !showLocalBrowser
         ) {
             delay(6_000)
             hideControls()
+        }
+    }
+
+    LaunchedEffect(seekHudVisible, seekTick) {
+        if (seekHudVisible) {
+            delay(1_800)
+            seekHudVisible = false
+            seekPreview = null
         }
     }
 
@@ -660,6 +751,7 @@ fun PlayerScreen(
             showSubtitles -> showSubtitles = false
             showSpeed -> showSpeed = false
             showAspect -> showAspect = false
+            showQuality -> showQuality = false
             showSubtitleStyle -> { showSubtitleStyle = false; returnToSubtitleControl() }
             showOnlineSearch -> { showOnlineSearch = false; returnToSubtitleControl() }
             showOnlineResults -> { showOnlineResults = false; returnToSubtitleControl() }
@@ -685,6 +777,7 @@ fun PlayerScreen(
                         showSubtitles -> showSubtitles = false
                         showSpeed -> showSpeed = false
                         showAspect -> showAspect = false
+                        showQuality -> showQuality = false
                         showSubtitleStyle -> { showSubtitleStyle = false; returnToSubtitleControl() }
                         showOnlineSearch -> { showOnlineSearch = false; returnToSubtitleControl() }
                         showOnlineResults -> { showOnlineResults = false; returnToSubtitleControl() }
@@ -833,14 +926,16 @@ fun PlayerScreen(
                     kidsMode = kidsMode,
                     playFocus = playFocus,
                     subtitleFocus = subtitleFocus,
+                    seekBarFocus = seekBarFocus,
                     onTogglePlay = { togglePlay() },
                     onSeekBy = { seekBy(it) },
                     onPrev = { if (currentIndex > 0) switchTo(currentIndex - 1) },
                     onNext = { if (currentIndex < (bundle?.episodes?.lastIndex ?: -1)) switchTo(currentIndex + 1) },
                     onEpisodes = { showEpisodes = true; showSubtitles = false; showSpeed = false; showAspect = false },
-                    onSubtitles = { showSubtitles = true; showEpisodes = false; showSpeed = false; showAspect = false },
-                    onSpeed = { showSpeed = true; showEpisodes = false; showSubtitles = false; showAspect = false },
-                    onAspect = { showAspect = true; showEpisodes = false; showSubtitles = false; showSpeed = false },
+                    onSubtitles = { showSubtitles = true; showEpisodes = false; showSpeed = false; showAspect = false; showQuality = false },
+                    onSpeed = { showSpeed = true; showEpisodes = false; showSubtitles = false; showAspect = false; showQuality = false },
+                    onQuality = { showQuality = true; showEpisodes = false; showSubtitles = false; showSpeed = false; showAspect = false },
+                    onAspect = { showAspect = true; showEpisodes = false; showSubtitles = false; showSpeed = false; showQuality = false },
                     onBack = {
                         saveCurrent()
                         onBack()
@@ -1017,6 +1112,21 @@ fun PlayerScreen(
                 )
             }
 
+            AnimatedVisibility(
+                visible = showQuality,
+                enter = fadeIn(tween(160)) + slideInHorizontally(tween(180)) { it / 8 },
+                exit = fadeOut(tween(120)) + slideOutHorizontally(tween(140)) { it / 8 }
+            ) {
+                QualityPanel(
+                    info = videoInfo,
+                    qualities = videoQualities,
+                    auto = autoQuality,
+                    onAuto = { applyVideoQuality(null) },
+                    onSelect = { applyVideoQuality(it) },
+                    onClose = { showQuality = false }
+                )
+            }
+
             if (showSpeed) {
                 val speeds = listOf(0.75f, 1f, 1.25f, 1.5f, 2f)
                 PlayerMenu(
@@ -1061,6 +1171,22 @@ fun PlayerScreen(
         }
 
         AnimatedVisibility(
+            visible = seekHudVisible,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = if (overlayVisible) 210.dp else 64.dp),
+            enter = fadeIn(tween(140)) + slideInVertically(tween(160)) { it / 3 },
+            exit = fadeOut(tween(120)) + slideOutVertically(tween(140)) { it / 3 }
+        ) {
+            SeekPreviewCard(
+                preview = seekPreview,
+                positionMs = positionMs,
+                durationMs = durationMs,
+                direction = seekDirection
+            )
+        }
+
+        AnimatedVisibility(
             visible = toast != null,
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 150.dp),
             enter = fadeIn(tween(160)) + slideInVertically(tween(180)) { it / 2 },
@@ -1094,6 +1220,7 @@ private fun PlayerControlsOverlay(
     kidsMode: Boolean,
     playFocus: FocusRequester,
     subtitleFocus: FocusRequester,
+    seekBarFocus: FocusRequester,
     onTogglePlay: () -> Unit,
     onSeekBy: (Long) -> Unit,
     onPrev: () -> Unit,
@@ -1101,6 +1228,7 @@ private fun PlayerControlsOverlay(
     onEpisodes: () -> Unit,
     onSubtitles: () -> Unit,
     onSpeed: () -> Unit,
+    onQuality: () -> Unit,
     onAspect: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -1109,6 +1237,7 @@ private fun PlayerControlsOverlay(
     val multiSeason = remember(bundle) {
         bundle?.episodes.orEmpty().map { it.season }.distinct().size > 1
     }
+    var seekFocused by remember { mutableStateOf(false) }
     val episodeLabel = when {
         series == null || episode == null -> ""
         series.kind == SeriesKind.MOVIE -> "电影"
@@ -1177,14 +1306,45 @@ private fun PlayerControlsOverlay(
                 .fillMaxWidth()
                 .padding(horizontal = 36.dp, vertical = 20.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(seekBarFocus)
+                    .focusable()
+                    .onFocusChanged { seekFocused = it.isFocused }
+                    .onPreviewKeyEvent { event ->
+                        if (event.type == KeyEventType.KeyDown) {
+                            when (event.nativeKeyEvent.keyCode) {
+                                AndroidKeyEvent.KEYCODE_DPAD_LEFT -> {
+                                    onSeekBy(-5_000)
+                                    true
+                                }
+                                AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                    onSeekBy(5_000)
+                                    true
+                                }
+                                else -> false
+                            }
+                        } else false
+                    }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Text(
                     if (positionMs <= 0) "00:00" else formatDuration(positionMs),
                     color = Color.White.copy(alpha = 0.86f),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.width(64.dp)
                 )
-                ProgressLine(progressFraction, Modifier.weight(1f))
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(50))
+                        .background(if (seekFocused) JuyingColors.Gold.copy(alpha = 0.10f) else Color.Transparent)
+                        .padding(vertical = 6.dp)
+                ) {
+                    ProgressLine(progressFraction, Modifier.fillMaxWidth())
+                }
                 Text(
                     formatDuration(durationMs),
                     color = Color.White.copy(alpha = 0.55f),
@@ -1247,6 +1407,12 @@ private fun PlayerControlsOverlay(
                     icon = Icons.Rounded.Speed,
                     label = "倍速",
                     onClick = onSpeed
+                )
+                Spacer(Modifier.width(18.dp))
+                PlayerControl(
+                    icon = Icons.Rounded.HighQuality,
+                    label = "画质",
+                    onClick = onQuality
                 )
                 Spacer(Modifier.width(18.dp))
                 PlayerControl(
@@ -2071,6 +2237,149 @@ private fun episodeLabel(media: MediaEntity, movie: Boolean, multiSeason: Boolea
     }
 
 @Composable
+private fun SeekPreviewCard(
+    preview: File?,
+    positionMs: Long,
+    durationMs: Long,
+    direction: String
+) {
+    val fraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    Row(
+        Modifier
+            .width(620.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color(0xF0101A28))
+            .border(1.dp, JuyingColors.Gold.copy(alpha = 0.35f), RoundedCornerShape(18.dp))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            Modifier
+                .width(190.dp)
+                .aspectRatio(16f / 9f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Brush.linearGradient(listOf(Color(0xFF22344F), Color(0xFF0D1725)))),
+            contentAlignment = Alignment.Center
+        ) {
+            if (preview != null) {
+                AsyncImage(
+                    model = preview,
+                    contentDescription = "进度预览",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                CircularProgressIndicator(
+                    color = JuyingColors.Gold,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                direction.ifBlank { "定位预览" },
+                color = JuyingColors.Gold,
+                style = MaterialTheme.typography.labelLarge
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                "${formatDuration(positionMs)} / ${formatDuration(durationMs)}",
+                color = Color.White,
+                style = MaterialTheme.typography.headlineSmall
+            )
+            Spacer(Modifier.height(8.dp))
+            ProgressLine(fraction, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+@Composable
+private fun QualityPanel(
+    info: VideoInfo?,
+    qualities: List<VideoQuality>,
+    auto: Boolean,
+    onAuto: () -> Unit,
+    onSelect: (VideoQuality) -> Unit,
+    onClose: () -> Unit
+) {
+    val firstFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        delay(100)
+        runCatching { firstFocus.requestFocus() }
+    }
+    BackHandler { onClose() }
+    Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)))
+        Column(
+            Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 36.dp, bottom = 110.dp)
+                .width(500.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xF0101A28))
+                .border(1.dp, JuyingColors.Outline.copy(alpha = 0.85f), RoundedCornerShape(20.dp))
+                .padding(20.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("画质与信息", color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                    Text("当前源与可选清晰度", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall)
+                }
+                TvButton("关闭", onClose, primary = false)
+            }
+            Spacer(Modifier.height(16.dp))
+            if (info != null) {
+                QualityInfoRow("分辨率", "${info.width} × ${info.height}")
+                QualityInfoRow("码率", if (info.bitrate > 0) "%.1f Mbps".format(info.bitrate / 1_000_000f) else "未知")
+                QualityInfoRow("编码", info.codec.ifBlank { "未知" })
+                QualityInfoRow("帧率", if (info.frameRate > 0) "%.2f fps".format(info.frameRate) else "未知")
+            } else {
+                Text("正在读取视频信息…", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
+            }
+            Spacer(Modifier.height(14.dp))
+            Text("清晰度", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(6.dp))
+            PlayerMenuRow(
+                label = "自动（推荐）",
+                selected = auto,
+                onClick = onAuto,
+                focusRequester = firstFocus
+            )
+            qualities.forEach { quality ->
+                Spacer(Modifier.height(4.dp))
+                PlayerMenuRow(
+                    label = quality.label,
+                    selected = !auto && info?.height == quality.height,
+                    onClick = { onSelect(quality) }
+                )
+            }
+            if (qualities.size <= 1) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "当前是单码率文件，只能播放原画；卡顿时可尝试切换网络或等待缓冲。",
+                    color = JuyingColors.TextMuted,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 3
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun QualityInfoRow(label: String, value: String) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(label, color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(70.dp))
+        Text(value, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
 private fun PlayerMenu(
     title: String,
     options: List<MenuOption>,
@@ -2086,17 +2395,17 @@ private fun PlayerMenu(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.Black.copy(alpha = 0.25f))
+                .background(Color.Black.copy(alpha = 0.32f))
         )
         Column(
             Modifier
                 .align(Alignment.BottomEnd)
                 .padding(end = 36.dp, bottom = 120.dp)
-                .width(280.dp)
-                .clip(RoundedCornerShape(16.dp))
+                .width(340.dp)
+                .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xF0101A28))
-                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(16.dp))
-                .padding(12.dp)
+                .border(1.dp, JuyingColors.Outline.copy(alpha = 0.85f), RoundedCornerShape(18.dp))
+                .padding(14.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -2112,42 +2421,64 @@ private fun PlayerMenu(
                     modifier = Modifier.size(18.dp)
                 )
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             options.forEachIndexed { index, option ->
-                FocusableSurface(
+                PlayerMenuRow(
+                    label = option.label,
+                    selected = option.selected,
                     onClick = option.onClick,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(42.dp)
-                        .then(if (index == 0) Modifier.focusRequester(firstFocus) else Modifier),
-                    shape = RoundedCornerShape(9.dp),
-                    focusedScale = 1.01f,
-                    backgroundColor = if (option.selected) JuyingColors.Gold.copy(alpha = 0.12f) else Color.Transparent,
-                    focusedBackgroundColor = JuyingColors.SurfaceFocused,
-                    borderColor = Color.Transparent,
-                    focusedBorderColor = JuyingColors.Gold
-                ) {
-                    Row(
-                        Modifier.padding(horizontal = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            option.label,
-                            color = if (option.selected) JuyingColors.Gold else JuyingColors.TextPrimary,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        if (option.selected) {
-                            Box(
-                                Modifier
-                                    .size(6.dp)
-                                    .clip(CircleShape)
-                                    .background(JuyingColors.Gold)
-                            )
-                        }
-                    }
-                }
-                Spacer(Modifier.height(3.dp))
+                    focusRequester = if (index == 0) firstFocus else null
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerMenuRow(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    focusRequester: FocusRequester? = null
+) {
+    var focused by remember { mutableStateOf(false) }
+    val accent = if (selected || focused) JuyingColors.Gold else JuyingColors.TextPrimary
+    FocusableSurface(
+        onClick = onClick,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .onFocusChanged { focused = it.isFocused }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
+        shape = RoundedCornerShape(10.dp),
+        focusedScale = 1.012f,
+        backgroundColor = if (selected) JuyingColors.Gold.copy(alpha = 0.08f) else Color.Transparent,
+        focusedBackgroundColor = Color(0xFF2A2418),
+        borderColor = Color.Transparent,
+        focusedBorderColor = JuyingColors.Gold
+    ) {
+        Box(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                label,
+                color = accent,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = if (selected || focused) FontWeight.SemiBold else FontWeight.Normal,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                maxLines = 1,
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (selected) {
+                Box(
+                    Modifier
+                        .align(Alignment.CenterEnd)
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(JuyingColors.Gold)
+                )
             }
         }
     }
