@@ -1,5 +1,6 @@
 package com.juying.tv.ui
 
+import com.juying.tv.BuildConfig
 import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -141,7 +142,7 @@ fun NavRail(
             }
         } else {
             Text(
-                "v1.0",
+                "v${BuildConfig.VERSION_NAME}",
                 color = JuyingColors.TextMuted,
                 style = MaterialTheme.typography.labelMedium,
                 fontSize = 11.sp
