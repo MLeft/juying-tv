@@ -26,10 +26,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -155,17 +158,19 @@ private fun NavRailItem(
     contentEntry: androidx.compose.ui.focus.FocusRequester?,
     onClick: () -> Unit
 ) {
-    val accent = when {
+    val focusManager = LocalFocusManager.current
+    var focused by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val labelColor = when {
         danger -> JuyingColors.Red
-        selected -> JuyingColors.Gold
+        selected || focused -> JuyingColors.Gold
         else -> JuyingColors.TextSecondary
     }
-    val focusManager = LocalFocusManager.current
     FocusableSurface(
         onClick = onClick,
         modifier = Modifier
             .width(76.dp)
             .height(62.dp)
+            .onFocusChanged { focused = it.isFocused }
             .onPreviewKeyEvent { event ->
                 if (event.type == KeyEventType.KeyDown &&
                     event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_DPAD_RIGHT
@@ -189,9 +194,10 @@ private fun NavRailItem(
             },
         shape = RoundedCornerShape(16.dp),
         focusedScale = 1.05f,
-        backgroundColor = if (selected) JuyingColors.Surface.copy(alpha = 0.7f) else Color.Transparent,
+        // 选中态只用左侧金色指示条和金色图标/文字；焦点态才出现胶囊底色和描边。
+        backgroundColor = Color.Transparent,
         focusedBackgroundColor = JuyingColors.SurfaceFocused,
-        borderColor = if (selected) JuyingColors.Outline else Color.Transparent,
+        borderColor = Color.Transparent,
         focusedBorderColor = if (danger) JuyingColors.Red else JuyingColors.Gold
     ) {
         Column(
@@ -202,13 +208,13 @@ private fun NavRailItem(
             Icon(
                 item.icon,
                 contentDescription = item.label,
-                tint = accent,
+                tint = labelColor,
                 modifier = Modifier.size(24.dp)
             )
             Spacer(Modifier.height(5.dp))
             Text(
                 item.label,
-                color = accent,
+                color = labelColor,
                 style = MaterialTheme.typography.labelMedium,
                 fontSize = 13.sp,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal

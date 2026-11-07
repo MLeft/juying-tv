@@ -224,7 +224,7 @@ fun TvChip(
         focusedScale = 1.05f,
         backgroundColor = if (selected) JuyingColors.Gold.copy(alpha = 0.16f) else JuyingColors.Surface.copy(alpha = 0.5f),
         focusedBackgroundColor = JuyingColors.SurfaceFocused,
-        borderColor = if (selected) JuyingColors.Gold.copy(alpha = 0.55f) else JuyingColors.Outline.copy(alpha = 0.55f),
+        borderColor = if (selected) JuyingColors.Gold.copy(alpha = 0.24f) else JuyingColors.Outline.copy(alpha = 0.55f),
         focusedBorderColor = JuyingColors.Gold
     ) {
         Row(
