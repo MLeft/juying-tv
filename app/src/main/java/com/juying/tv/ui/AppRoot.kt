@@ -2,6 +2,8 @@ package com.juying.tv.ui
 
 import androidx.activity.compose.BackHandler
 import android.view.KeyEvent as AndroidKeyEvent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
@@ -180,6 +183,21 @@ fun AppRoot(viewModel: AppViewModel) {
 
             Box(Modifier.weight(1f).fillMaxSize()) {
                 val screen = current
+                var contentReady by remember(screen) { mutableStateOf(false) }
+                LaunchedEffect(screen) { contentReady = true }
+                val contentAlpha by animateFloatAsState(
+                    targetValue = if (contentReady) 1f else 0f,
+                    animationSpec = tween(180),
+                    label = "screenContent"
+                )
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = contentAlpha
+                            translationY = (1f - contentAlpha) * 12f
+                        }
+                ) {
                 screenStateHolder.SaveableStateProvider(screen.saveKey) {
                     when (screen) {
                     Screen.Home -> HomeScreen(
@@ -263,6 +281,7 @@ fun AppRoot(viewModel: AppViewModel) {
                         fromStart = screen.fromStart,
                         onBack = { pop() }
                     )
+                }
                 }
                 }
 

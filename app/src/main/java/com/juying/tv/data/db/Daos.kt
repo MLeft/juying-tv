@@ -159,14 +159,23 @@ interface MediaDao {
     @Query("SELECT COUNT(*) FROM media WHERE sourceId = :sourceId")
     suspend fun countBySource(sourceId: String): Int
 
-    @Query("SELECT sourceId, seriesId, parentPath FROM media WHERE hidden = 0")
+    @Query("SELECT seriesId, COUNT(*) AS count FROM media GROUP BY seriesId")
+    suspend fun countsBySeries(): List<SeriesMediaCount>
+
+    @Query("SELECT sourceId, seriesId, parentPath, COUNT(*) AS videoCount FROM media WHERE hidden = 0 GROUP BY sourceId, seriesId, parentPath")
     fun observeMediaPaths(): Flow<List<MediaPathRow>>
 }
+
+data class SeriesMediaCount(
+    val seriesId: String,
+    val count: Int
+)
 
 data class MediaPathRow(
     val sourceId: String,
     val seriesId: String,
-    val parentPath: String
+    val parentPath: String,
+    val videoCount: Int
 )
 
 @Dao

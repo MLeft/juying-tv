@@ -249,7 +249,8 @@ fun TvChip(
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
                 textAlign = if (centered) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Start,
-                maxLines = 1
+                maxLines = 1,
+                modifier = if (centered) Modifier.fillMaxWidth() else Modifier
             )
         }
     }

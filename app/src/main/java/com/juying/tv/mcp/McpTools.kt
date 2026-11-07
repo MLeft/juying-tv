@@ -250,8 +250,8 @@ class McpTools(
         val series = db.seriesDao().getAll()
         val sources = db.sourceDao().getAll()
         val collections = db.collectionDao().getCollections()
-        var mediaCount = 0
-        series.forEach { mediaCount += db.mediaDao().countAll(it.id) }
+        val counts = db.mediaDao().countsBySeries()
+        val mediaCount = counts.sumOf { it.count }
         return JSONObject()
             .put("series", series.count { it.kind == "SERIES" })
             .put("movies", series.count { it.kind == "MOVIE" })
@@ -275,8 +275,9 @@ class McpTools(
             .take(limit)
             .toList()
         val array = JSONArray()
+        val counts = db.mediaDao().countsBySeries().associate { it.seriesId to it.count }
         all.forEach { series ->
-            array.put(seriesJson(series, db.mediaDao().countAll(series.id)))
+            array.put(seriesJson(series, counts[series.id] ?: 0))
         }
         return JSONObject().put("count", all.size).put("items", array)
     }

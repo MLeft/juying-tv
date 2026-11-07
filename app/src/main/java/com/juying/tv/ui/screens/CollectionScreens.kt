@@ -534,7 +534,7 @@ private fun buildFolderIndex(mediaPaths: List<MediaPathRow>, sourceId: String?):
         while (true) {
             allPaths += path
             seriesByPath.getOrPut(path) { mutableSetOf() } += row.seriesId
-            videoCountByPath[path] = (videoCountByPath[path] ?: 0) + 1
+            videoCountByPath[path] = (videoCountByPath[path] ?: 0) + row.videoCount
             if (path == "/") break
             path = parentOfPath(path)
         }
