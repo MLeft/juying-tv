@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -236,6 +237,7 @@ fun PlayerScreen(
     var seekTick by remember { mutableIntStateOf(0) }
     var seekPreviewJob by remember { mutableStateOf<Job?>(null) }
     var interaction by remember { mutableIntStateOf(0) }
+    var seekBarFocused by remember { mutableStateOf(false) }
     var playerResizeMode by remember { mutableIntStateOf(AspectRatioFrameLayout.RESIZE_MODE_FIT) }
     var speed by remember { mutableFloatStateOf(1f) }
     var positionMs by remember { mutableLongStateOf(0L) }
@@ -546,6 +548,7 @@ fun PlayerScreen(
 
     fun hideControls() {
         overlayVisible = false
+        seekBarFocused = false
         showEpisodes = false
         showSubtitles = false
         showSpeed = false
@@ -717,8 +720,8 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(overlayVisible, interaction, showEpisodes, showSubtitles, showSpeed, showAspect, showQuality, showSubtitleStyle, showOnlineSearch, showOnlineResults, showLocalBrowser, isPlaying) {
-        if (overlayVisible && isPlaying && !showEpisodes && !showSubtitles && !showSpeed && !showAspect && !showQuality &&
+    LaunchedEffect(overlayVisible, interaction, seekBarFocused, showEpisodes, showSubtitles, showSpeed, showAspect, showQuality, showSubtitleStyle, showOnlineSearch, showOnlineResults, showLocalBrowser, isPlaying) {
+        if (overlayVisible && isPlaying && !seekBarFocused && !showEpisodes && !showSubtitles && !showSpeed && !showAspect && !showQuality &&
             !showSubtitleStyle && !showOnlineSearch && !showOnlineResults && !showLocalBrowser
         ) {
             delay(6_000)
@@ -927,6 +930,10 @@ fun PlayerScreen(
                     playFocus = playFocus,
                     subtitleFocus = subtitleFocus,
                     seekBarFocus = seekBarFocus,
+                    onSeekBarFocusChanged = { focused ->
+                        seekBarFocused = focused
+                        if (focused) interaction++
+                    },
                     onTogglePlay = { togglePlay() },
                     onSeekBy = { seekBy(it) },
                     onPrev = { if (currentIndex > 0) switchTo(currentIndex - 1) },
@@ -1221,6 +1228,7 @@ private fun PlayerControlsOverlay(
     playFocus: FocusRequester,
     subtitleFocus: FocusRequester,
     seekBarFocus: FocusRequester,
+    onSeekBarFocusChanged: (Boolean) -> Unit,
     onTogglePlay: () -> Unit,
     onSeekBy: (Long) -> Unit,
     onPrev: () -> Unit,
@@ -1238,6 +1246,11 @@ private fun PlayerControlsOverlay(
         bundle?.episodes.orEmpty().map { it.season }.distinct().size > 1
     }
     var seekFocused by remember { mutableStateOf(false) }
+    val seekBarThickness by animateDpAsState(
+        targetValue = if (seekFocused) 7.dp else 3.dp,
+        animationSpec = tween(160),
+        label = "seekBarThickness"
+    )
     val episodeLabel = when {
         series == null || episode == null -> ""
         series.kind == SeriesKind.MOVIE -> "电影"
@@ -1309,9 +1322,10 @@ private fun PlayerControlsOverlay(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .focusRequester(seekBarFocus)
-                    .focusable()
-                    .onFocusChanged { seekFocused = it.isFocused }
+                    .onFocusChanged {
+                        seekFocused = it.isFocused
+                        onSeekBarFocusChanged(it.isFocused)
+                    }
                     .onPreviewKeyEvent { event ->
                         if (event.type == KeyEventType.KeyDown) {
                             when (event.nativeKeyEvent.keyCode) {
@@ -1327,12 +1341,15 @@ private fun PlayerControlsOverlay(
                             }
                         } else false
                     }
+                    .focusRequester(seekBarFocus)
+                    .focusable()
                     .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
                     if (positionMs <= 0) "00:00" else formatDuration(positionMs),
-                    color = Color.White.copy(alpha = 0.86f),
+                    color = if (seekFocused) JuyingColors.Gold else Color.White.copy(alpha = 0.86f),
+                    fontWeight = if (seekFocused) FontWeight.SemiBold else FontWeight.Normal,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.width(64.dp)
                 )
@@ -1340,14 +1357,19 @@ private fun PlayerControlsOverlay(
                     Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(50))
-                        .background(if (seekFocused) JuyingColors.Gold.copy(alpha = 0.10f) else Color.Transparent)
-                        .padding(vertical = 6.dp)
+                        .background(if (seekFocused) JuyingColors.Gold.copy(alpha = 0.12f) else Color.Transparent)
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
                 ) {
-                    ProgressLine(progressFraction, Modifier.fillMaxWidth())
+                    ProgressLine(
+                        progressFraction,
+                        Modifier.fillMaxWidth(),
+                        thickness = seekBarThickness,
+                        showThumb = seekFocused
+                    )
                 }
                 Text(
                     formatDuration(durationMs),
-                    color = Color.White.copy(alpha = 0.55f),
+                    color = if (seekFocused) Color.White.copy(alpha = 0.75f) else Color.White.copy(alpha = 0.55f),
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 14.dp).width(64.dp)
                 )
@@ -2311,35 +2333,59 @@ private fun QualityPanel(
     }
     BackHandler { onClose() }
     Box(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.38f)))
+        Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f)))
         Column(
             Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 36.dp, bottom = 110.dp)
-                .width(500.dp)
-                .clip(RoundedCornerShape(20.dp))
+                .padding(end = 36.dp, bottom = 120.dp)
+                .width(360.dp)
+                .clip(RoundedCornerShape(18.dp))
                 .background(Color(0xF0101A28))
-                .border(1.dp, JuyingColors.Outline.copy(alpha = 0.85f), RoundedCornerShape(20.dp))
-                .padding(20.dp)
+                .border(1.dp, JuyingColors.Outline.copy(alpha = 0.85f), RoundedCornerShape(18.dp))
+                .padding(16.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("画质与信息", color = Color.White, style = MaterialTheme.typography.headlineSmall)
-                    Text("当前源与可选清晰度", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall)
-                }
-                TvButton("关闭", onClose, primary = false)
+                Text(
+                    "画质与信息",
+                    color = JuyingColors.TextSecondary,
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    Icons.Rounded.Close,
+                    contentDescription = "关闭",
+                    tint = JuyingColors.TextMuted,
+                    modifier = Modifier.size(18.dp)
+                )
             }
-            Spacer(Modifier.height(16.dp))
-            if (info != null) {
-                QualityInfoRow("分辨率", "${info.width} × ${info.height}")
-                QualityInfoRow("码率", if (info.bitrate > 0) "%.1f Mbps".format(info.bitrate / 1_000_000f) else "未知")
-                QualityInfoRow("编码", info.codec.ifBlank { "未知" })
-                QualityInfoRow("帧率", if (info.frameRate > 0) "%.2f fps".format(info.frameRate) else "未知")
-            } else {
-                Text("正在读取视频信息…", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(12.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.04f))
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                if (info != null) {
+                    Row {
+                        QualityInfoCell("分辨率", "${info.width} × ${info.height}", Modifier.weight(1f))
+                        QualityInfoCell("帧率", if (info.frameRate > 0) "%.2f fps".format(info.frameRate) else "未知", Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row {
+                        QualityInfoCell("编码", info.codec.ifBlank { "未知" }, Modifier.weight(1f))
+                        QualityInfoCell("码率", if (info.bitrate > 0) "%.1f Mbps".format(info.bitrate / 1_000_000f) else "未知", Modifier.weight(1f))
+                    }
+                } else {
+                    Text(
+                        "正在读取视频信息…",
+                        color = JuyingColors.TextMuted,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
             }
             Spacer(Modifier.height(14.dp))
-            Text("清晰度", color = JuyingColors.TextSecondary, style = MaterialTheme.typography.bodyMedium)
+            Text("清晰度", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall)
             Spacer(Modifier.height(6.dp))
             PlayerMenuRow(
                 label = "自动（推荐）",
@@ -2358,9 +2404,10 @@ private fun QualityPanel(
             if (qualities.size <= 1) {
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "当前是单码率文件，只能播放原画；卡顿时可尝试切换网络或等待缓冲。",
+                    "当前是单码率文件，只能播放原画；卡顿时可切换网络或等待缓冲。",
                     color = JuyingColors.TextMuted,
                     style = MaterialTheme.typography.bodySmall,
+                    lineHeight = 16.sp,
                     maxLines = 3
                 )
             }
@@ -2369,13 +2416,18 @@ private fun QualityPanel(
 }
 
 @Composable
-private fun QualityInfoRow(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall, modifier = Modifier.width(70.dp))
-        Text(value, color = JuyingColors.TextPrimary, style = MaterialTheme.typography.bodyMedium)
+private fun QualityInfoCell(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(label, color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodySmall, fontSize = 11.sp)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            value,
+            color = JuyingColors.TextPrimary,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 

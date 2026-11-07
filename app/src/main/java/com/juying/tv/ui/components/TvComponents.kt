@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -26,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -401,20 +403,39 @@ fun ProgressLine(
     fraction: Float,
     modifier: Modifier = Modifier,
     color: Color = JuyingColors.Gold,
-    trackColor: Color = Color.White.copy(alpha = 0.18f)
+    trackColor: Color = Color.White.copy(alpha = 0.18f),
+    thickness: Dp = 3.dp,
+    showThumb: Boolean = false
 ) {
-    Box(
-        modifier
-            .height(3.dp)
-            .clip(RoundedCornerShape(50))
-            .background(trackColor)
-    ) {
+    val clamped = fraction.coerceIn(0f, 1f)
+    val thumbSize = (thickness * 2.2f).coerceAtLeast(10.dp)
+    BoxWithConstraints(modifier.height(thickness)) {
         Box(
             Modifier
-                .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                .fillMaxSize()
+                .clip(RoundedCornerShape(50))
+                .background(trackColor)
+        )
+        Box(
+            Modifier
+                .fillMaxWidth(clamped)
                 .fillMaxHeight()
+                .clip(RoundedCornerShape(50))
                 .background(color)
         )
+        if (showThumb) {
+            val thumbX = (maxWidth * clamped - thumbSize / 2)
+                .coerceIn(0.dp, (maxWidth - thumbSize).coerceAtLeast(0.dp))
+            Box(
+                Modifier
+                    .align(Alignment.CenterStart)
+                    .offset(x = thumbX)
+                    .size(thumbSize)
+                    .clip(CircleShape)
+                    .background(Color.White)
+                    .border(2.dp, color, CircleShape)
+            )
+        }
     }
 }
 
