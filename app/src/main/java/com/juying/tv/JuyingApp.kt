@@ -17,7 +17,10 @@ class JuyingApp : Application() {
         super.onCreate()
         instance = this
         graph = AppGraph(this)
-        ioScope.launch { graph.playbackResolver.pruneThumbCache() }
+        ioScope.launch {
+            graph.playbackResolver.pruneThumbCache()
+            graph.playbackResolver.pruneCoverCache()
+        }
     }
 
     companion object {

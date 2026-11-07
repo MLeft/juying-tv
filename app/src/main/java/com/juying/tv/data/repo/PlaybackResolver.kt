@@ -221,6 +221,19 @@ class PlaybackResolver(
         return file
     }
 
+    /** 清理已不再被任何剧集引用的 Agent 导入封面。 */
+    suspend fun pruneCoverCache() = withContext(Dispatchers.IO) {
+        val dir = File(context.filesDir, "covers")
+        val referenced = database.seriesDao().getAll()
+            .flatMap { listOfNotNull(it.coverUrl, it.coverRef) }
+            .toSet()
+        dir.listFiles()?.forEach { file ->
+            if (file.name.startsWith("agent-") && Uri.fromFile(file).toString() !in referenced) {
+                runCatching { file.delete() }
+            }
+        }
+    }
+
     /** 控制首集/选集缩略图缓存占用，按最久未使用淘汰。 */
     suspend fun pruneThumbCache(maxBytes: Long = 200L * 1024 * 1024) = withContext(Dispatchers.IO) {
         val dir = File(context.filesDir, "episode_thumbs")
