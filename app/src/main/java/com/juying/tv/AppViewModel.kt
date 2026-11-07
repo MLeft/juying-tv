@@ -104,6 +104,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val pinSet = settings.pinHash.map { it != null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
     val autoNext = settings.autoNext.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+    val subtitleSize = settings.subtitleSize
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 26)
+    val subtitleBottom = settings.subtitleBottom
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 18)
+    val subtitleFont = settings.subtitleFont
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), "default")
 
     val kidsSeries = repo.kidsSeries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
     val scrapeMeta = repo.scrapeMeta.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -966,6 +972,18 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setResumePlayback(enabled: Boolean) {
         viewModelScope.launch { settings.setResumePlayback(enabled) }
+    }
+
+    fun setSubtitleSize(sp: Int) {
+        viewModelScope.launch { settings.setSubtitleSize(sp) }
+    }
+
+    fun setSubtitleBottom(percent: Int) {
+        viewModelScope.launch { settings.setSubtitleBottom(percent) }
+    }
+
+    fun setSubtitleFont(font: String) {
+        viewModelScope.launch { settings.setSubtitleFont(font) }
     }
 
     fun setPin(pin: String) {

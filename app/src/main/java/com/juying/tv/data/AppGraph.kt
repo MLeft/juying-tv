@@ -37,6 +37,7 @@ class AppGraph(context: Context) {
     val tvmaze = TvmazeClient(okHttp)
     val tmdb = TmdbClient(okHttp)
     val scrape = ScrapeService(appContext, douban, tvmaze, tmdb)
+    val subtitles = com.juying.tv.data.subtitle.SubtitleClient(okHttp)
     val ai = AiClient(okHttp, settings)
     val scanner = SourceScanner(appContext, webDav, quark)
     val repository = LibraryRepository(appContext, database, scanner)

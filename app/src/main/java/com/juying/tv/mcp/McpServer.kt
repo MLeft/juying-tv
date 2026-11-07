@@ -147,7 +147,7 @@ class McpServer(
                         )
                         .put(
                             "serverInfo",
-                            JSONObject().put("name", "juying-tv").put("version", "1.4.4")
+                            JSONObject().put("name", "juying-tv").put("version", "1.4.5")
                         )
                 )
             }

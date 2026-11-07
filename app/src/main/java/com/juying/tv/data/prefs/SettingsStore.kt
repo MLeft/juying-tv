@@ -30,6 +30,9 @@ class SettingsStore(private val context: Context) {
         val mcpEnabled = booleanPreferencesKey("mcp_enabled")
         val mcpToken = stringPreferencesKey("mcp_token")
         val mcpPort = androidx.datastore.preferences.core.intPreferencesKey("mcp_port")
+        val subtitleSize = androidx.datastore.preferences.core.intPreferencesKey("subtitle_size")
+        val subtitleBottom = androidx.datastore.preferences.core.intPreferencesKey("subtitle_bottom")
+        val subtitleFont = stringPreferencesKey("subtitle_font")
     }
 
     val kidsMode: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.kidsMode] ?: false }
@@ -45,6 +48,9 @@ class SettingsStore(private val context: Context) {
     val mcpEnabled: Flow<Boolean> = context.settingsDataStore.data.map { it[Keys.mcpEnabled] ?: false }
     val mcpToken: Flow<String> = context.settingsDataStore.data.map { it[Keys.mcpToken].orEmpty() }
     val mcpPort: Flow<Int> = context.settingsDataStore.data.map { it[Keys.mcpPort] ?: 8787 }
+    val subtitleSize: Flow<Int> = context.settingsDataStore.data.map { it[Keys.subtitleSize] ?: 26 }
+    val subtitleBottom: Flow<Int> = context.settingsDataStore.data.map { it[Keys.subtitleBottom] ?: 18 }
+    val subtitleFont: Flow<String> = context.settingsDataStore.data.map { it[Keys.subtitleFont] ?: "default" }
     val aiApiKeys: Flow<Map<String, String>> = context.settingsDataStore.data.map { prefs ->
         val raw = prefs[Keys.aiKeys].orEmpty()
         val map = runCatching {
@@ -117,6 +123,18 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setMcpPort(port: Int) {
         context.settingsDataStore.edit { it[Keys.mcpPort] = port }
+    }
+
+    suspend fun setSubtitleSize(sp: Int) {
+        context.settingsDataStore.edit { it[Keys.subtitleSize] = sp.coerceIn(16, 44) }
+    }
+
+    suspend fun setSubtitleBottom(percent: Int) {
+        context.settingsDataStore.edit { it[Keys.subtitleBottom] = percent.coerceIn(4, 40) }
+    }
+
+    suspend fun setSubtitleFont(font: String) {
+        context.settingsDataStore.edit { it[Keys.subtitleFont] = font }
     }
 
     suspend fun setPin(pin: String) {
