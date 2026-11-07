@@ -1000,12 +1000,16 @@ private fun EpisodePanel(
     val episodes = bundle?.episodes.orEmpty()
     val multiSeason = remember(episodes) { episodes.map { it.season }.distinct().size > 1 }
     val firstFocus = remember { FocusRequester() }
-    val state = rememberTvLazyGridState(
-        initialFirstVisibleItemIndex = ((currentIndex - 2).coerceAtLeast(0) / 2) * 2
-    )
+    val state = rememberTvLazyGridState()
 
-    LaunchedEffect(Unit) {
-        delay(120)
+    LaunchedEffect(currentIndex) {
+        var waited = 0
+        while (state.layoutInfo.totalItemsCount == 0 && waited < 1500) {
+            delay(50)
+            waited += 50
+        }
+        runCatching { state.scrollToItem((currentIndex / 2) * 2) }
+        delay(80)
         runCatching { firstFocus.requestFocus() }
     }
 
@@ -1120,7 +1124,7 @@ private fun EpisodePanelCard(
             }
             Box(
                 Modifier
-                    .align(Alignment.TopStart)
+                    .align(Alignment.BottomStart)
                     .padding(7.dp)
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.Black.copy(alpha = 0.68f))
