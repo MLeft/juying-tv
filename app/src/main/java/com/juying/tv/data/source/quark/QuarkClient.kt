@@ -46,6 +46,18 @@ class QuarkClient(private val client: OkHttpClient) {
      */
     private val cookieOverrides = ConcurrentHashMap<String, String>()
 
+    /** 夸克接口偶发 5xx；对服务端错误重试一次，避免整次扫描因瞬时故障中断。 */
+    private fun executeWithRetry(request: Request): okhttp3.Response {
+        var attempt = 0
+        while (true) {
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful || response.code !in 500..599 || attempt >= 1) return response
+            response.close()
+            attempt++
+            Thread.sleep(500L)
+        }
+    }
+
     private fun currentCookie(config: QuarkConfig): String {
         val base = normalizeCookie(config.cookie)
         return cookieOverrides[base.hashCode().toString()] ?: base
@@ -145,7 +157,7 @@ class QuarkClient(private val client: OkHttpClient) {
             }.build())
             .build()
 
-        client.newCall(request).execute().use { response ->
+        executeWithRetry(request).use { response ->
             if (!response.isSuccessful) throw IOException("夸克接口 HTTP ${response.code}")
             captureCookies(baseCookie, response)
             val text = response.body?.string().orEmpty()
@@ -299,8 +311,17 @@ class QuarkClient(private val client: OkHttpClient) {
                 .header("Accept", "application/json, text/plain, */*")
                 .build()
 
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) throw IOException("夸克接口 HTTP ${response.code}")
+            executeWithRetry(request).use { response ->
+                if (!response.isSuccessful) {
+                    val detail = runCatching {
+                        response.peekBody(512).string().replace('\n', ' ').take(240)
+                    }.getOrNull().orEmpty()
+                    android.util.Log.w(
+                        "JuyingQuark",
+                        "listFolder HTTP ${response.code} fid=$fid page=$page body=$detail"
+                    )
+                    throw IOException("夸克接口 HTTP ${response.code}")
+                }
                 captureCookies(normalizeCookie(config.cookie), response)
                 val text = response.body?.string().orEmpty()
                 val json = runCatching { JSONObject(text) }.getOrElse {
