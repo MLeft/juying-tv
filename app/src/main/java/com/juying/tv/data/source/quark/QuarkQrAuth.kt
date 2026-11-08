@@ -96,25 +96,26 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
 
     /** 用 service_ticket 换取登录 Cookie。 */
     suspend fun exchange(ticket: String): String = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url("https://pan.quark.cn/account/info?st=$ticket&lw=scan")
-            .headers(commonHeaders())
-            .get()
+        // 先建立 pan 域会话（ctoken），再兑换 ticket；之后补一次 info 与列表页，
+        // 部分登录 Cookie 是在后续请求的 Set-Cookie 中下发的。
+        runCatching { getText("https://pan.quark.cn/") }
+        val infoUrl = "https://pan.quark.cn/account/info".toHttpUrl().newBuilder()
+            .addQueryParameter("st", ticket)
+            .addQueryParameter("lw", "scan")
             .build()
-        client.newCall(request).execute().use { response ->
-            val body = response.body?.string().orEmpty()
-            if (!response.isSuccessful) {
-                throw IOException("夸克登录确认失败：HTTP ${response.code}")
-            }
-            val json = runCatching { JSONObject(body) }.getOrNull()
-            if (json != null && json.has("success") && !json.optBoolean("success")) {
-                val message = json.optString("msg").ifBlank { "服务端未确认登录" }
-                throw IOException("夸克登录确认失败：$message")
-            }
+            .toString()
+        val first = getJson(infoUrl)
+        if (first.has("success") && !first.optBoolean("success")) {
+            val message = first.optString("msg").ifBlank { "服务端未确认登录" }
+            throw IOException("夸克登录确认失败：$message")
         }
+        runCatching { getJson("https://pan.quark.cn/account/info") }
+        runCatching { getText("https://pan.quark.cn/list") }
         val cookie = synchronized(cookieStore) {
             cookieStore.joinToString("; ") { "${it.name}=${it.value}" }
         }.trim()
+        val names = synchronized(cookieStore) { cookieStore.map { it.name }.distinct() }
+        android.util.Log.i("JuyingQuarkQr", "login cookies: ${names.joinToString(",")}")
         if (!cookie.contains("__puus=") || !cookie.contains("__pus=")) {
             throw IOException("登录成功但未获取到完整 Cookie，请刷新二维码重试")
         }
@@ -132,6 +133,26 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
             )
             .build()
             .toString()
+
+    private fun getJson(url: String): JSONObject {
+        val text = getText(url)
+        return runCatching { JSONObject(text) }
+            .getOrElse { throw IOException("夸克登录接口返回异常，请稍后重试") }
+    }
+
+    private fun getText(url: String): String {
+        val request = Request.Builder()
+            .url(url)
+            .headers(commonHeaders())
+            .get()
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("夸克登录接口 HTTP ${response.code}")
+            }
+            return response.body?.string().orEmpty()
+        }
+    }
 
     private fun postForm(url: String, fields: Map<String, String>): JSONObject {
         val body = FormBody.Builder().apply {
