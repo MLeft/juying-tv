@@ -70,7 +70,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -103,8 +102,9 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
 /**
- * 聚焦时在控件外侧叠加暖金描边，与彩色阴影一起形成边缘泛光。
- * 只在聚焦时绘制，开销可忽略；必须放在 clip 之前，避免泛光被裁掉。
+ * 聚焦时绘制连续的暖金边缘柔光：多层向外扩张的圆角填充叠加，
+ * 越靠近控件边缘叠加层数越多，形成没有断层的渐隐光晕。
+ * 只在聚焦时绘制；必须放在 clip 之前，避免柔光被裁掉。
  */
 fun Modifier.focusGlow(
     focused: Boolean,
@@ -115,22 +115,21 @@ fun Modifier.focusGlow(
     if (!focused && intensity <= 0.01f) return this
     return drawBehind {
         val strength = intensity.coerceIn(0f, 1f)
-        val rings = listOf(
-            Triple(1.5.dp, 1.5.dp, 0.55f),
-            Triple(2.5.dp, 4.5.dp, 0.20f)
-        )
-        rings.forEach { (width, expand, alpha) ->
-            val expandPx = expand.toPx()
+        val layerAlpha = 0.045f * strength
+        if (layerAlpha <= 0f) return@drawBehind
+        val layers = 14
+        val spread = 10.dp.toPx()
+        for (i in layers downTo 1) {
+            val expand = spread * i / layers
             val outline = shape.createOutline(
-                Size(size.width + expandPx * 2, size.height + expandPx * 2),
+                Size(size.width + expand * 2, size.height + expand * 2),
                 layoutDirection,
                 this
             )
-            translate(left = -expandPx, top = -expandPx) {
+            translate(left = -expand, top = -expand) {
                 drawPath(
                     path = Path().apply { addOutline(outline) },
-                    color = color.copy(alpha = alpha * strength),
-                    style = Stroke(width = width.toPx())
+                    color = color.copy(alpha = layerAlpha)
                 )
             }
         }
@@ -192,9 +191,7 @@ fun FocusableSurface(
             .shadow(
                 elevation = elevation,
                 shape = shape,
-                clip = false,
-                ambientColor = focusedGlowColor.copy(alpha = 0.85f),
-                spotColor = focusedGlowColor.copy(alpha = 0.6f)
+                clip = false
             )
             .focusGlow(focused, shape, focusedGlowColor, glowStrength)
             .clip(shape)
