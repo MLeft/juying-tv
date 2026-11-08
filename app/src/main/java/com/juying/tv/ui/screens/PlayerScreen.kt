@@ -251,6 +251,10 @@ fun PlayerScreen(
     val playFocus = remember { FocusRequester() }
     val subtitleFocus = remember { FocusRequester() }
     val seekBarFocus = remember { FocusRequester() }
+    val episodesFocus = remember { FocusRequester() }
+    val speedFocus = remember { FocusRequester() }
+    val qualityFocus = remember { FocusRequester() }
+    val aspectFocus = remember { FocusRequester() }
     val progressFraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
 
     var showLocalBrowser by remember { mutableStateOf(false) }
@@ -272,11 +276,15 @@ fun PlayerScreen(
         }
     }
 
-    fun returnToSubtitleControl() {
+    fun returnToControl(target: FocusRequester) {
         scope.launch {
-            delay(250)
-            runCatching { subtitleFocus.requestFocus() }
+            delay(240)
+            runCatching { target.requestFocus() }
         }
+    }
+
+    fun returnToSubtitleControl() {
+        returnToControl(subtitleFocus)
     }
 
     fun pickLocalSubtitle(file: File) {
@@ -434,18 +442,21 @@ fun PlayerScreen(
             .build()
         autoQuality = quality == null
         showQuality = false
+        returnToControl(qualityFocus)
         toast = if (quality == null) "已切换为自动画质" else "已限制为 ${quality.label}"
     }
 
     fun switchTo(targetIndex: Int) {
         val b = bundle ?: return
         val episode = b.episodes.getOrNull(targetIndex) ?: return
+        val fromEpisodes = showEpisodes
         saveCurrent()
         exoPlayer?.pause()
         scope.launch {
             loading = true
             error = null
             showEpisodes = false
+            if (fromEpisodes) returnToControl(episodesFocus)
             try {
                 val next = viewModel.resolveEpisode(episode.id)
                 currentIndex = targetIndex
@@ -711,12 +722,12 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(overlayVisible, showEpisodes, showSubtitles, showSpeed, showAspect) {
-        delay(100)
-        when {
-            !overlayVisible -> runCatching { rootFocus.requestFocus() }
-            !showEpisodes && !showSubtitles && !showSpeed && !showAspect ->
-                runCatching { playFocus.requestFocus() }
+    LaunchedEffect(overlayVisible) {
+        delay(120)
+        if (overlayVisible) {
+            runCatching { playFocus.requestFocus() }
+        } else {
+            runCatching { rootFocus.requestFocus() }
         }
     }
 
@@ -750,11 +761,11 @@ fun PlayerScreen(
                 saveCurrent()
                 onBack()
             }
-            showEpisodes -> showEpisodes = false
-            showSubtitles -> showSubtitles = false
-            showSpeed -> showSpeed = false
-            showAspect -> showAspect = false
-            showQuality -> showQuality = false
+            showEpisodes -> { showEpisodes = false; returnToControl(episodesFocus) }
+            showSubtitles -> { showSubtitles = false; returnToSubtitleControl() }
+            showSpeed -> { showSpeed = false; returnToControl(speedFocus) }
+            showAspect -> { showAspect = false; returnToControl(aspectFocus) }
+            showQuality -> { showQuality = false; returnToControl(qualityFocus) }
             showSubtitleStyle -> { showSubtitleStyle = false; returnToSubtitleControl() }
             showOnlineSearch -> { showOnlineSearch = false; returnToSubtitleControl() }
             showOnlineResults -> { showOnlineResults = false; returnToSubtitleControl() }
@@ -776,11 +787,11 @@ fun PlayerScreen(
             when (code) {
                 AndroidKeyEvent.KEYCODE_BACK -> {
                     when {
-                        showEpisodes -> showEpisodes = false
-                        showSubtitles -> showSubtitles = false
-                        showSpeed -> showSpeed = false
-                        showAspect -> showAspect = false
-                        showQuality -> showQuality = false
+                        showEpisodes -> { showEpisodes = false; returnToControl(episodesFocus) }
+                        showSubtitles -> { showSubtitles = false; returnToSubtitleControl() }
+                        showSpeed -> { showSpeed = false; returnToControl(speedFocus) }
+                        showAspect -> { showAspect = false; returnToControl(aspectFocus) }
+                        showQuality -> { showQuality = false; returnToControl(qualityFocus) }
                         showSubtitleStyle -> { showSubtitleStyle = false; returnToSubtitleControl() }
                         showOnlineSearch -> { showOnlineSearch = false; returnToSubtitleControl() }
                         showOnlineResults -> { showOnlineResults = false; returnToSubtitleControl() }
@@ -930,6 +941,10 @@ fun PlayerScreen(
                     playFocus = playFocus,
                     subtitleFocus = subtitleFocus,
                     seekBarFocus = seekBarFocus,
+                    episodesFocus = episodesFocus,
+                    speedFocus = speedFocus,
+                    qualityFocus = qualityFocus,
+                    aspectFocus = aspectFocus,
                     onSeekBarFocusChanged = { focused ->
                         seekBarFocused = focused
                         if (focused) interaction++
@@ -960,7 +975,7 @@ fun PlayerScreen(
                     currentIndex = currentIndex,
                     loadThumbnail = { mediaId -> viewModel.episodeThumbnail(mediaId) },
                     onSelect = { switchTo(it) },
-                    onClose = { showEpisodes = false }
+                    onClose = { showEpisodes = false; returnToControl(episodesFocus) }
                 )
             }
 
@@ -1130,7 +1145,7 @@ fun PlayerScreen(
                     auto = autoQuality,
                     onAuto = { applyVideoQuality(null) },
                     onSelect = { applyVideoQuality(it) },
-                    onClose = { showQuality = false }
+                    onClose = { showQuality = false; returnToControl(qualityFocus) }
                 )
             }
 
@@ -1146,10 +1161,11 @@ fun PlayerScreen(
                                 speed = value
                                 exoPlayer?.setPlaybackSpeed(value)
                                 showSpeed = false
+                                returnToControl(speedFocus)
                             }
                         )
                     },
-                    onClose = { showSpeed = false }
+                    onClose = { showSpeed = false; returnToControl(speedFocus) }
                 )
             }
 
@@ -1169,10 +1185,11 @@ fun PlayerScreen(
                             onClick = {
                                 playerResizeMode = mode
                                 showAspect = false
+                                returnToControl(aspectFocus)
                             }
                         )
                     },
-                    onClose = { showAspect = false }
+                    onClose = { showAspect = false; returnToControl(aspectFocus) }
                 )
             }
         }
@@ -1228,6 +1245,10 @@ private fun PlayerControlsOverlay(
     playFocus: FocusRequester,
     subtitleFocus: FocusRequester,
     seekBarFocus: FocusRequester,
+    episodesFocus: FocusRequester,
+    speedFocus: FocusRequester,
+    qualityFocus: FocusRequester,
+    aspectFocus: FocusRequester,
     onSeekBarFocusChanged: (Boolean) -> Unit,
     onTogglePlay: () -> Unit,
     onSeekBy: (Long) -> Unit,
@@ -1383,7 +1404,8 @@ private fun PlayerControlsOverlay(
                 PlayerControl(
                     icon = Icons.Rounded.PlaylistPlay,
                     label = "选集",
-                    onClick = onEpisodes
+                    onClick = onEpisodes,
+                    focusRequester = episodesFocus
                 )
                 Spacer(Modifier.width(18.dp))
                 PlayerControl(
@@ -1428,19 +1450,22 @@ private fun PlayerControlsOverlay(
                 PlayerControl(
                     icon = Icons.Rounded.Speed,
                     label = "倍速",
-                    onClick = onSpeed
+                    onClick = onSpeed,
+                    focusRequester = speedFocus
                 )
                 Spacer(Modifier.width(18.dp))
                 PlayerControl(
                     icon = Icons.Rounded.HighQuality,
                     label = "画质",
-                    onClick = onQuality
+                    onClick = onQuality,
+                    focusRequester = qualityFocus
                 )
                 Spacer(Modifier.width(18.dp))
                 PlayerControl(
                     icon = Icons.Rounded.AspectRatio,
                     label = "画面",
-                    onClick = onAspect
+                    onClick = onAspect,
+                    focusRequester = aspectFocus
                 )
             }
         }
