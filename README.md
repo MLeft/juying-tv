@@ -28,7 +28,7 @@ dist/JuyingTV-1.5.32.apk
 ### ADB 安装（推荐）
 
 ```bash
-adb connect 192.168.1.196:5555
+adb connect <电视IP>:5555
 adb install -r dist/JuyingTV-1.5.32.apk
 ```
 

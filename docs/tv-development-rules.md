@@ -48,7 +48,7 @@
 | 安全区 | 页面左右 **36dp**，上下 **18–22dp**；内容不得贴边 |
 | 输入 | 仅遥控器；系统无 DocumentsUI；无触摸假设 |
 | 构建 | JDK 17 `~/android-jdk/Contents/Home`；SDK `~/android-sdk`；Gradle 8.7 `~/gradle-dist/gradle-8.7` |
-| ADB | `~/ptools33/platform-tools/adb`，必须 `ADB_USB=0`；电视 `192.168.1.196:5555` |
+| ADB | `~/ptools33/platform-tools/adb`，必须 `ADB_USB=0`；电视 `<电视IP>:5555` |
 
 - **MUST** 以 960×540dp 为设计画布；所有间距、字号、面板宽度按此推算。
 - **MUST** 真机验收；x86_64 模拟器装不了仅含 ARM ABI 的 APK，模拟器结果不能替代真机。
@@ -451,7 +451,7 @@ JAVA_HOME=~/android-jdk/Contents/Home \
 ### 12.3 装机
 
 ```bash
-ADB_USB=0 ~/ptools33/platform-tools/adb connect 192.168.1.196:5555
+ADB_USB=0 ~/ptools33/platform-tools/adb connect <电视IP>:5555
 ADB_USB=0 ~/ptools33/platform-tools/adb install -r dist/JuyingTV-<version>.apk
 ADB_USB=0 ~/ptools33/platform-tools/adb shell am force-stop com.juying.tv
 ADB_USB=0 ~/ptools33/platform-tools/adb shell am start -n com.juying.tv/.MainActivity

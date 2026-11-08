@@ -60,7 +60,7 @@ JAVA_HOME=~/android-jdk/Contents/Home \
 4. 装机并验证：
 
 ```bash
-ADB_USB=0 ~/ptools33/platform-tools/adb connect 192.168.1.196:5555
+ADB_USB=0 ~/ptools33/platform-tools/adb connect <电视IP>:5555
 ADB_USB=0 ~/ptools33/platform-tools/adb install -r dist/JuyingTV-<version>.apk
 ADB_USB=0 ~/ptools33/platform-tools/adb shell am force-stop com.juying.tv
 ADB_USB=0 ~/ptools33/platform-tools/adb shell am start -n com.juying.tv/.MainActivity
