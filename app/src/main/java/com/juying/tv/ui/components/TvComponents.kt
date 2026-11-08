@@ -1276,7 +1276,7 @@ fun PosterCard(
         onClick = onClick,
         modifier = base.aspectRatio(2f / 3f),
         shape = RoundedCornerShape(16.dp),
-        focusedScale = 1.05f
+        focusedScale = 1.0f
     ) {
         SeriesArtwork(series, Modifier.fillMaxSize(), showTitleFallback = false)
         Box(

@@ -479,7 +479,7 @@ private fun EpisodeCard(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        focusedScale = 1.04f,
+        focusedScale = 1.0f,
         backgroundColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.1f) else JuyingColors.Surface.copy(alpha = 0.45f),
         focusedBackgroundColor = JuyingColors.SurfaceFocused,
         borderColor = if (isCurrent) JuyingColors.Gold.copy(alpha = 0.55f) else JuyingColors.Outline.copy(alpha = 0.45f),

@@ -393,7 +393,7 @@ private fun ContinueCard(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             shape = RoundedCornerShape(16.dp),
-            focusedScale = 1.045f
+            focusedScale = 1.0f
         ) {
             SeriesArtwork(series, Modifier.fillMaxSize(), showTitleFallback = false)
             Box(
@@ -474,7 +474,7 @@ fun SeriesCard(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             shape = RoundedCornerShape(15.dp),
-            focusedScale = 1.055f
+            focusedScale = 1.0f
         ) {
             SeriesArtwork(series, Modifier.fillMaxSize(), showTitleFallback = false)
             Box(

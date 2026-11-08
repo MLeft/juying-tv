@@ -429,7 +429,7 @@ private fun CollectionsContent(
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 8.4f)
                     .then(if (collections.size >= lastCollectionRowStart) Modifier.blockDownAtBottom() else Modifier),
                 shape = RoundedCornerShape(20.dp),
-                focusedScale = 1.03f,
+                focusedScale = 1.0f,
                 backgroundColor = JuyingColors.Surface.copy(alpha = 0.28f),
                 focusedBackgroundColor = JuyingColors.SurfaceFocused
             ) {
@@ -476,7 +476,7 @@ private fun CollectionCard(
             onClick = onClick,
             modifier = surfaceModifier,
             shape = RoundedCornerShape(18.dp),
-            focusedScale = 1.035f
+            focusedScale = 1.0f
         ) {
             val cover = collection.coverUrl
             if (!cover.isNullOrBlank()) {

@@ -1611,7 +1611,7 @@ private fun EpisodePanelCard(
             onClick = onClick,
             modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
             shape = RoundedCornerShape(12.dp),
-            focusedScale = 1.045f,
+            focusedScale = 1.0f,
             backgroundColor = if (current) JuyingColors.Gold.copy(alpha = 0.14f) else JuyingColors.Surface.copy(alpha = 0.4f),
             focusedBackgroundColor = JuyingColors.SurfaceFocused,
             borderColor = if (current) JuyingColors.Gold.copy(alpha = 0.35f) else JuyingColors.Outline.copy(alpha = 0.45f)
