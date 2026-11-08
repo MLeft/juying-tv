@@ -199,7 +199,8 @@ private fun NavRailItem(
         backgroundColor = Color.Transparent,
         focusedBackgroundColor = JuyingColors.SurfaceFocused,
         borderColor = Color.Transparent,
-        focusedBorderColor = if (danger) JuyingColors.Red else JuyingColors.Gold
+        focusedBorderColor = if (danger) JuyingColors.Red else JuyingColors.Gold,
+        focusedGlowColor = if (danger) JuyingColors.Red else JuyingColors.GoldBright
     ) {
         Column(
             Modifier.fillMaxSize(),

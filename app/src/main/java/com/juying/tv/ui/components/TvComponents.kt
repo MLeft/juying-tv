@@ -56,15 +56,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.addOutline
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
@@ -95,6 +102,41 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 
+/**
+ * 聚焦时在控件外侧叠加暖金描边，与彩色阴影一起形成边缘泛光。
+ * 只在聚焦时绘制，开销可忽略；必须放在 clip 之前，避免泛光被裁掉。
+ */
+fun Modifier.focusGlow(
+    focused: Boolean,
+    shape: Shape,
+    color: Color = JuyingColors.GoldBright,
+    intensity: Float = 1f
+): Modifier {
+    if (!focused && intensity <= 0.01f) return this
+    return drawBehind {
+        val strength = intensity.coerceIn(0f, 1f)
+        val rings = listOf(
+            Triple(1.5.dp, 1.5.dp, 0.55f),
+            Triple(2.5.dp, 4.5.dp, 0.20f)
+        )
+        rings.forEach { (width, expand, alpha) ->
+            val expandPx = expand.toPx()
+            val outline = shape.createOutline(
+                Size(size.width + expandPx * 2, size.height + expandPx * 2),
+                layoutDirection,
+                this
+            )
+            translate(left = -expandPx, top = -expandPx) {
+                drawPath(
+                    path = Path().apply { addOutline(outline) },
+                    color = color.copy(alpha = alpha * strength),
+                    style = Stroke(width = width.toPx())
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun FocusableSurface(
     onClick: () -> Unit,
@@ -102,11 +144,13 @@ fun FocusableSurface(
     shape: androidx.compose.ui.graphics.Shape = RoundedCornerShape(16.dp),
     focusedScale: Float = 1.04f,
     focusedBorderColor: Color = JuyingColors.Gold,
+    focusedGlowColor: Color = JuyingColors.GoldBright,
     backgroundColor: Color = JuyingColors.Surface.copy(alpha = 0.55f),
     focusedBackgroundColor: Color = JuyingColors.SurfaceFocused,
     borderColor: Color = JuyingColors.Outline.copy(alpha = 0.65f),
     borderWidth: Dp = 1.dp,
     enabled: Boolean = true,
+    onFocusChange: ((Boolean) -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -131,20 +175,35 @@ fun FocusableSurface(
         animationSpec = tween(150),
         label = "focusBackground"
     )
+    val glowStrength by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(150),
+        label = "focusGlowStrength"
+    )
 
     Box(
         modifier = modifier
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-                shadowElevation = elevation.toPx()
                 this.shape = shape
                 clip = false
             }
+            .shadow(
+                elevation = elevation,
+                shape = shape,
+                clip = false,
+                ambientColor = focusedGlowColor.copy(alpha = 0.85f),
+                spotColor = focusedGlowColor.copy(alpha = 0.6f)
+            )
+            .focusGlow(focused, shape, focusedGlowColor, glowStrength)
             .clip(shape)
             .background(background)
             .border(if (focused) 2.dp else borderWidth, border, shape)
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChange?.invoke(it.isFocused)
+            }
             .clickable(
                 interactionSource = interaction,
                 indication = null,
@@ -632,6 +691,11 @@ fun TvTextField(
     keyboardType: KeyboardType = KeyboardType.Text
 ) {
     var focused by remember { mutableStateOf(false) }
+    val glowStrength by animateFloatAsState(
+        targetValue = if (focused) 1f else 0f,
+        animationSpec = tween(150),
+        label = "fieldGlow"
+    )
     var fieldValue by remember {
         mutableStateOf(TextFieldValue(value, selection = TextRange(value.length)))
     }
@@ -653,6 +717,7 @@ fun TvTextField(
             Modifier
                 .fillMaxWidth()
                 .heightIn(min = if (singleLine) 50.dp else 96.dp)
+                .focusGlow(focused, RoundedCornerShape(12.dp), intensity = glowStrength)
                 .clip(RoundedCornerShape(12.dp))
                 .background(JuyingColors.BackgroundAlt)
                 .border(

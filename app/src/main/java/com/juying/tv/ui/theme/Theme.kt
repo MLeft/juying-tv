@@ -18,7 +18,7 @@ object JuyingColors {
     val BackgroundAlt = Color(0xFF0B1220)
     val Surface = Color(0xFF111C2E)
     val SurfaceHigh = Color(0xFF1A283C)
-    val SurfaceFocused = Color(0xFF243956)
+    val SurfaceFocused = Color(0xFF2B2418)
     val Outline = Color(0xFF263B55)
     val OutlineFocused = Color(0xFFE7B563)
     val Gold = Color(0xFFE7B563)

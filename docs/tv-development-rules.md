@@ -143,7 +143,7 @@ Modifier.onPreviewKeyEvent { e ->
 | BackgroundAlt | `#0B1220` | 次级背景 |
 | Surface | `#111C2E` | 卡片/面板 |
 | SurfaceHigh | `#1A283C` | 次级按钮/标签 |
-| SurfaceFocused | `#243956` | 默认焦点底 |
+| SurfaceFocused | `#2B2418` | 焦点暖底（全应用统一） |
 | Outline | `#263B55` | 默认描边 |
 | Gold | `#E7B563` | 强调、选中、进度 |
 | GoldBright | `#FFD48C` | 主按钮焦点 |
@@ -180,6 +180,15 @@ Modifier.onPreviewKeyEvent { e ->
 - 卡片圆角 16dp；面板圆角 18dp（字幕样式预览面板为历史遗留 22dp，不再扩散）；按钮/胶囊全圆角；焦点描边 2dp。
 - 主焦点缩放：卡片 1.04，按钮 1.05，紧凑菜单行 1.012；禁止大幅缩放导致相邻元素重叠。
 - 焦点阴影 18dp，仅在聚焦时出现。
+
+#### 焦点视觉四件套（必须同时具备）
+
+1. **暖色底**：`SurfaceFocused #2B2418`，与金色描边同色系。
+2. **2dp 金色描边**：`Gold #E7B563`；危险操作使用 `Red`。
+3. **边缘泛光**：使用共享修饰符 `Modifier.focusGlow(...)` 画双层暖金描边（外扩 1.5/4.5dp，透明度 0.55/0.20），并叠加 `GoldBright #FFD48C` 彩色阴影，150ms 渐入渐出。
+4. **缩放**：按控件类型取 1.012–1.09，spring 过渡。
+
+选中态只保留平面标记（金色文字、圆点、勾选、左侧短条），**不得使用泛光、缩放或 2dp 金边**；泛光与描边是焦点的专属签名。
 
 ### 4.4 面板规格（新增面板必须复用）
 
@@ -246,6 +255,7 @@ Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
 | --- | --- |
 | 焦点缩放/阴影 | spring，damping 0.72 / stiffness 560 |
 | 焦点描边/底色 | tween 150ms |
+| 焦点泛光 | tween 150ms 渐入渐出 |
 | 面板进出 | fade 120–160ms + slide 140–180ms |
 | 页面切换 | 淡入 + 轻微位移 180ms |
 | 骨架屏脉冲 | 900–1200ms 循环，低对比 |
@@ -435,6 +445,7 @@ ADB_USB=0 ~/ptools33/platform-tools/adb shell dumpsys package com.juying.tv | gr
 | 聚焦后按左右键没反应，反而触发全局快进 | `onPreviewKeyEvent` 顺序错误或未消费事件 | 3.1 |
 | 新增板块后怎么按都进不去 | 中段遗留 `down = Cancel` | R03 / 3.3 |
 | 以为光标在导航，其实在内容区 | 选中态用了焦点边框 | R04 / 3.5 |
+| 焦点不够醒目、和金色选中元素混在一起 | 焦点只有金边，没有泛光和暖底；选中态过度高亮 | R04 / 4.3 焦点四件套 |
 | 面板很宽、右侧大片留白 | 没有复用面板规格，用信息量决定宽度 | R05 / 4.4 |
 | 胶囊里的文字偏左 | 缺 `fillMaxWidth + TextAlign.Center` | R06 / 4.5 |
 | 选项切换后文字左右跳 | 选项内容自适应宽度 | 4.5 |

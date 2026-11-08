@@ -1456,6 +1456,7 @@ private fun PlayerControl(
     focusRequester: FocusRequester? = null
 ) {
     val size = if (large) 62.dp else 46.dp
+    var focused by remember { mutableStateOf(false) }
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         FocusableSurface(
             onClick = onClick,
@@ -1467,7 +1468,8 @@ private fun PlayerControl(
             backgroundColor = if (large) JuyingColors.Gold.copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.42f),
             focusedBackgroundColor = if (large) JuyingColors.GoldBright else JuyingColors.Gold,
             borderColor = if (large) Color.Transparent else Color.White.copy(alpha = 0.22f),
-            focusedBorderColor = Color.White
+            focusedBorderColor = Color.White,
+            onFocusChange = { focused = it }
         ) {
             Icon(
                 icon,
@@ -1479,7 +1481,8 @@ private fun PlayerControl(
         Spacer(Modifier.height(4.dp))
         Text(
             label,
-            color = Color.White.copy(alpha = 0.6f),
+            color = if (focused) JuyingColors.GoldBright else Color.White.copy(alpha = 0.6f),
+            fontWeight = if (focused) FontWeight.SemiBold else FontWeight.Normal,
             fontSize = 10.sp,
             maxLines = 1
         )
@@ -1591,7 +1594,7 @@ private fun EpisodePanelCard(
             focusedScale = 1.045f,
             backgroundColor = if (current) JuyingColors.Gold.copy(alpha = 0.14f) else JuyingColors.Surface.copy(alpha = 0.4f),
             focusedBackgroundColor = JuyingColors.SurfaceFocused,
-            borderColor = if (current) JuyingColors.Gold.copy(alpha = 0.72f) else JuyingColors.Outline.copy(alpha = 0.45f)
+            borderColor = if (current) JuyingColors.Gold.copy(alpha = 0.35f) else JuyingColors.Outline.copy(alpha = 0.45f)
         ) {
             if (thumb != null) {
                 AsyncImage(
@@ -2506,7 +2509,7 @@ private fun PlayerMenuRow(
         shape = RoundedCornerShape(10.dp),
         focusedScale = 1.012f,
         backgroundColor = if (selected) JuyingColors.Gold.copy(alpha = 0.08f) else Color.Transparent,
-        focusedBackgroundColor = Color(0xFF2A2418),
+        focusedBackgroundColor = JuyingColors.SurfaceFocused,
         borderColor = Color.Transparent,
         focusedBorderColor = JuyingColors.Gold
     ) {
