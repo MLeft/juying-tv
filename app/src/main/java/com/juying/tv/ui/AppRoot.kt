@@ -167,7 +167,14 @@ fun AppRoot(viewModel: AppViewModel) {
                     kidsMode = kidsMode,
                     onNavigate = { key ->
                         when (key) {
-                            NavKey.HOME -> go(Screen.Home)
+                            NavKey.HOME -> {
+                                // 主动点“首页”时回到默认主按钮，不恢复上次浏览位置。
+                                NavFocusMemory.homeTarget = null
+                                NavFocusMemory.homeSeriesId = null
+                                NavFocusMemory.homeMediaId = null
+                                NavFocusMemory.homeShelfKey = null
+                                go(Screen.Home)
+                            }
                             NavKey.LIBRARY -> go(Screen.Library)
                             NavKey.SOURCES -> go(Screen.Sources)
                             NavKey.SETTINGS -> go(Screen.Settings)

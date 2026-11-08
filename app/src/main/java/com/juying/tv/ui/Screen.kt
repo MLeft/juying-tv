@@ -48,4 +48,10 @@ object NavFocusMemory {
     /** 最近一次播放的单集，返回详情页时焦点回到这一集。 */
     var episodeId by mutableStateOf<String?>(null)
     var episodeSeriesId by mutableStateOf<String?>(null)
+
+    /** 首页返回时的触发控件：hero-primary / hero-details / continue / series。 */
+    var homeTarget by mutableStateOf<String?>(null)
+    var homeSeriesId by mutableStateOf<String?>(null)
+    var homeMediaId by mutableStateOf<String?>(null)
+    var homeShelfKey by mutableStateOf<String?>(null)
 }

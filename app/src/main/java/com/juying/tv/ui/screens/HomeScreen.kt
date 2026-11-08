@@ -103,12 +103,98 @@ fun HomeScreen(
     }
 
     val recent = remember(visible) { visible.sortedByDescending { it.createdAt }.take(20) }
+    val columnState = rememberTvLazyListState()
     val firstFocus = remember { FocusRequester() }
-    RegisterScreenFocus(firstFocus)
+    val heroDetailsFocus = remember { FocusRequester() }
+    val continueFocus = remember { FocusRequester() }
+    val seriesFocus = remember { FocusRequester() }
+    // 返回首页时恢复进入前的触发控件，只在本次进入消费一次。
+    val homeTarget = remember { com.juying.tv.ui.NavFocusMemory.homeTarget }
+    val homeSeriesId = remember { com.juying.tv.ui.NavFocusMemory.homeSeriesId }
+    val homeMediaId = remember { com.juying.tv.ui.NavFocusMemory.homeMediaId }
+    val homeShelfKey = remember { com.juying.tv.ui.NavFocusMemory.homeShelfKey }
+    val sectionKeys = remember(filteredContinue, collectionRows, recent) {
+        buildList {
+            if (filteredContinue.isNotEmpty()) add("continue")
+            collectionRows.forEach { add("collection:${it.first.id}") }
+            if (recent.isNotEmpty()) add("recent")
+            add("all")
+        }
+    }
+    // TvLazyColumn 前两项固定是顶栏与 Hero；没有“继续观看”时 Hero 不渲染，分区整体上移一项。
+    val sectionBase = if (featured != null) 2 else 1
+    val targetSectionIndex = homeShelfKey?.let { sectionKeys.indexOf(it) } ?: -1
+    val targetShelfItems = when (homeShelfKey) {
+        "recent" -> recent
+        "all" -> visible.take(40)
+        "continue" -> emptyList()
+        else -> collectionRows.firstOrNull { "collection:${it.first.id}" == homeShelfKey }?.second.orEmpty()
+    }
+    val targetAvailable = when (homeTarget) {
+        "hero-primary", "hero-details" -> featured != null
+        "continue" -> filteredContinue.any { it.mediaId == homeMediaId } ||
+            (homeSeriesId != null && filteredContinue.any { it.seriesId == homeSeriesId })
+        "series" -> targetSectionIndex >= 0 && targetShelfItems.any { it.id == homeSeriesId }
+        else -> false
+    }
+    val entryTarget = when (homeTarget) {
+        "hero-details" -> heroDetailsFocus
+        "continue" -> continueFocus
+        "series" -> seriesFocus
+        else -> firstFocus
+    }
+    RegisterScreenFocus(entryTarget)
 
-    LaunchedEffect(featured?.id, visible.size, sources.size) {
-        delay(220)
-        runCatching { firstFocus.requestFocus() }
+    LaunchedEffect(Unit) {
+        com.juying.tv.ui.NavFocusMemory.homeTarget = null
+        com.juying.tv.ui.NavFocusMemory.homeSeriesId = null
+        com.juying.tv.ui.NavFocusMemory.homeMediaId = null
+        com.juying.tv.ui.NavFocusMemory.homeShelfKey = null
+    }
+
+    LaunchedEffect(homeTarget, targetAvailable, featured?.id, visible.size, sources.size) {
+        delay(200)
+        if (visible.isEmpty()) {
+            // 空库或数据未到时先落在空态主按钮；数据到达后本效果会重新执行并恢复目标。
+            runCatching { firstFocus.requestFocus() }
+            return@LaunchedEffect
+        }
+        if (!targetAvailable) {
+            runCatching { columnState.scrollToItem(1) }
+            repeat(16) {
+                if (runCatching { firstFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                delay(100)
+            }
+            return@LaunchedEffect
+        }
+        when (homeTarget) {
+            "hero-primary" -> {
+                runCatching { columnState.scrollToItem(1) }
+                repeat(16) {
+                    if (runCatching { firstFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                    delay(100)
+                }
+            }
+            "hero-details" -> {
+                runCatching { columnState.scrollToItem(1) }
+                repeat(16) {
+                    if (runCatching { heroDetailsFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                    delay(100)
+                }
+            }
+            "continue", "series" -> {
+                // 先把目标货架滚进可视区，具体卡片由货架自己滚动并聚焦。
+                if (targetSectionIndex >= 0) {
+                    runCatching { columnState.scrollToItem(sectionBase + targetSectionIndex) }
+                }
+            }
+            else -> {
+                repeat(16) {
+                    if (runCatching { firstFocus.requestFocus() }.isSuccess) return@LaunchedEffect
+                    delay(100)
+                }
+            }
+        }
     }
 
     Box(Modifier.fillMaxSize()) {
@@ -137,7 +223,7 @@ fun HomeScreen(
             }
         } else {
             TvLazyColumn(
-                state = rememberTvLazyListState(),
+                state = columnState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 32.dp, end = 32.dp, top = 20.dp, bottom = 36.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
@@ -175,11 +261,18 @@ fun HomeScreen(
                             continueItem = featuredContinue,
                             kidsMode = kidsMode,
                             primaryFocus = firstFocus,
+                            detailsFocus = heroDetailsFocus,
                             onPrimary = {
+                                com.juying.tv.ui.NavFocusMemory.homeTarget = "hero-primary"
+                                com.juying.tv.ui.NavFocusMemory.homeShelfKey = null
                                 if (featuredContinue != null) onPlay(featuredContinue.mediaId, series.id)
                                 else onOpenSeries(series.id)
                             },
-                            onDetails = { onOpenSeries(series.id) }
+                            onDetails = {
+                                com.juying.tv.ui.NavFocusMemory.homeTarget = "hero-details"
+                                com.juying.tv.ui.NavFocusMemory.homeShelfKey = null
+                                onOpenSeries(series.id)
+                            }
                         )
                     }
                 }
@@ -189,7 +282,10 @@ fun HomeScreen(
                         ContinueShelf(
                             items = filteredContinue,
                             seriesById = visibleById,
-                            onPlay = onPlay
+                            onPlay = onPlay,
+                            restoreMediaId = homeMediaId.takeIf { homeTarget == "continue" },
+                            restoreSeriesId = homeSeriesId.takeIf { homeTarget == "continue" },
+                            focusRequester = continueFocus
                         )
                     }
                 }
@@ -200,6 +296,11 @@ fun HomeScreen(
                             title = collection.name,
                             subtitle = "${items.size} 部内容 · 自定义合集",
                             seriesList = items,
+                            shelfKey = "collection:${collection.id}",
+                            restoreSeriesId = homeSeriesId.takeIf {
+                                homeTarget == "series" && homeShelfKey == "collection:${collection.id}"
+                            },
+                            focusRequester = seriesFocus,
                             onOpenSeries = onOpenSeries,
                             onOpenCollection = { onOpenCollection(collection.id) }
                         )
@@ -212,6 +313,11 @@ fun HomeScreen(
                             title = "最近加入",
                             subtitle = "新收录到媒体库的内容",
                             seriesList = recent,
+                            shelfKey = "recent",
+                            restoreSeriesId = homeSeriesId.takeIf {
+                                homeTarget == "series" && homeShelfKey == "recent"
+                            },
+                            focusRequester = seriesFocus,
                             onOpenSeries = onOpenSeries
                         )
                     }
@@ -222,6 +328,11 @@ fun HomeScreen(
                         title = if (kidsMode) "适合观看" else "全部内容",
                         subtitle = if (kidsMode) "家长允许观看的剧集与电影" else "按名称排序，可在媒体库中重新整理",
                         seriesList = visible.take(40),
+                        shelfKey = "all",
+                        restoreSeriesId = homeSeriesId.takeIf {
+                            homeTarget == "series" && homeShelfKey == "all"
+                        },
+                        focusRequester = seriesFocus,
                         onOpenSeries = onOpenSeries
                     )
                 }
@@ -257,6 +368,7 @@ private fun HeroBanner(
     continueItem: ContinueItem?,
     kidsMode: Boolean,
     primaryFocus: FocusRequester,
+    detailsFocus: FocusRequester,
     onPrimary: () -> Unit,
     onDetails: () -> Unit
 ) {
@@ -344,7 +456,7 @@ private fun HeroBanner(
                     icon = Icons.Rounded.PlayArrow,
                     focusRequester = primaryFocus
                 )
-                TvButton("查看详情", onDetails, primary = false)
+                TvButton("查看详情", onDetails, primary = false, focusRequester = detailsFocus)
             }
         }
     }
@@ -354,8 +466,31 @@ private fun HeroBanner(
 private fun ContinueShelf(
     items: List<ContinueItem>,
     seriesById: Map<String, SeriesEntity>,
-    onPlay: (String, String) -> Unit
+    onPlay: (String, String) -> Unit,
+    restoreMediaId: String? = null,
+    restoreSeriesId: String? = null,
+    focusRequester: FocusRequester? = null
 ) {
+    val listState = rememberTvLazyListState()
+    // 刚看完的单集可能已经移出“继续观看”，此时退回到同一系列的下一张卡片。
+    val restoreIndex = remember(items, restoreMediaId, restoreSeriesId) {
+        val byMedia = if (restoreMediaId == null) -1 else items.indexOfFirst { it.mediaId == restoreMediaId }
+        if (byMedia >= 0) byMedia
+        else if (restoreSeriesId == null) -1
+        else items.indexOfFirst { it.seriesId == restoreSeriesId }
+    }
+    val restoreMatchId = items.getOrNull(restoreIndex)?.mediaId
+    if (restoreIndex >= 0 && focusRequester != null) {
+        LaunchedEffect(restoreIndex, items.size) {
+            delay(320)
+            runCatching { listState.scrollToItem(restoreIndex) }
+            delay(80)
+            repeat(20) {
+                if (runCatching { focusRequester.requestFocus() }.isSuccess) return@LaunchedEffect
+                delay(100)
+            }
+        }
+    }
     Column {
         SectionHeader(
             title = "继续观看",
@@ -364,7 +499,7 @@ private fun ContinueShelf(
         )
         Spacer(Modifier.height(14.dp))
         TvLazyRow(
-            state = rememberTvLazyListState(),
+            state = listState,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -374,7 +509,14 @@ private fun ContinueShelf(
                     ContinueCard(
                         series = series,
                         item = item,
-                        onClick = { onPlay(item.mediaId, item.seriesId) }
+                        onClick = {
+                            com.juying.tv.ui.NavFocusMemory.homeTarget = "continue"
+                            com.juying.tv.ui.NavFocusMemory.homeMediaId = item.mediaId
+                            com.juying.tv.ui.NavFocusMemory.homeSeriesId = item.seriesId
+                            com.juying.tv.ui.NavFocusMemory.homeShelfKey = "continue"
+                            onPlay(item.mediaId, item.seriesId)
+                        },
+                        focusRequester = if (item.mediaId == restoreMatchId) focusRequester else null
                     )
                     }
             }
@@ -386,12 +528,16 @@ private fun ContinueShelf(
 private fun ContinueCard(
     series: SeriesEntity,
     item: ContinueItem,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    focusRequester: FocusRequester? = null
 ) {
     Column(Modifier.width(250.dp).padding(vertical = 4.dp)) {
         FocusableSurface(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             shape = RoundedCornerShape(16.dp),
             focusedScale = 1.0f
         ) {
@@ -435,10 +581,28 @@ fun SeriesShelf(
     title: String,
     subtitle: String? = null,
     seriesList: List<SeriesEntity>,
+    shelfKey: String,
     onOpenSeries: (String) -> Unit,
-    onOpenCollection: (() -> Unit)? = null
+    onOpenCollection: (() -> Unit)? = null,
+    restoreSeriesId: String? = null,
+    focusRequester: FocusRequester? = null
 ) {
     if (seriesList.isEmpty()) return
+    val listState = rememberTvLazyListState()
+    val restoreIndex = remember(seriesList, restoreSeriesId) {
+        if (restoreSeriesId == null) -1 else seriesList.indexOfFirst { it.id == restoreSeriesId }
+    }
+    if (restoreIndex >= 0 && focusRequester != null) {
+        LaunchedEffect(restoreIndex, seriesList.size) {
+            delay(320)
+            runCatching { listState.scrollToItem(restoreIndex) }
+            delay(80)
+            repeat(20) {
+                if (runCatching { focusRequester.requestFocus() }.isSuccess) return@LaunchedEffect
+                delay(100)
+            }
+        }
+    }
     Column {
         SectionHeader(
             title = title,
@@ -452,12 +616,21 @@ fun SeriesShelf(
         )
         Spacer(Modifier.height(14.dp))
         TvLazyRow(
-            state = rememberTvLazyListState(),
+            state = listState,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             items(seriesList, key = { it.id }) { series ->
-                SeriesCard(series = series, onClick = { onOpenSeries(series.id) })
+                SeriesCard(
+                    series = series,
+                    onClick = {
+                        com.juying.tv.ui.NavFocusMemory.homeTarget = "series"
+                        com.juying.tv.ui.NavFocusMemory.homeSeriesId = series.id
+                        com.juying.tv.ui.NavFocusMemory.homeShelfKey = shelfKey
+                        onOpenSeries(series.id)
+                    },
+                    focusRequester = if (series.id == restoreSeriesId) focusRequester else null
+                )
             }
         }
     }
@@ -467,12 +640,16 @@ fun SeriesShelf(
 fun SeriesCard(
     series: SeriesEntity,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null
 ) {
     Column(modifier.width(200.dp).padding(vertical = 4.dp)) {
         FocusableSurface(
             onClick = onClick,
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(16f / 9f)
+                .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier),
             shape = RoundedCornerShape(15.dp),
             focusedScale = 1.0f
         ) {
