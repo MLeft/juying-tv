@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.Cookie
 import okhttp3.CookieJar
+import okhttp3.FormBody
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
@@ -50,7 +51,14 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
         .build()
 
     suspend fun createSession(): Session = withContext(Dispatchers.IO) {
-        val json = getJson("https://uop.quark.cn/cas/ajax/getTokenForQrcodeLogin")
+        val json = postForm(
+            "https://uop.quark.cn/cas/ajax/getTokenForQrcodeLogin",
+            linkedMapOf(
+                "client_id" to CLIENT_ID.toString(),
+                "v" to "1.2",
+                "request_id" to System.currentTimeMillis().toString()
+            )
+        )
         val token = json.optJSONObject("data")
             ?.optJSONObject("members")
             ?.optString("token")
@@ -62,7 +70,15 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
     }
 
     suspend fun poll(token: String): PollResult = withContext(Dispatchers.IO) {
-        val json = getJson("https://uop.quark.cn/cas/ajax/getServiceTicketByQrcodeToken?token=$token")
+        val json = postForm(
+            "https://uop.quark.cn/cas/ajax/getServiceTicketByQrcodeToken",
+            linkedMapOf(
+                "client_id" to CLIENT_ID.toString(),
+                "v" to "1.2",
+                "request_id" to System.currentTimeMillis().toString(),
+                "token" to token
+            )
+        )
         when (json.optInt("status")) {
             2000000 -> {
                 val ticket = json.optJSONObject("data")
@@ -107,10 +123,9 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
 
     private fun buildScanUrl(token: String): String =
         "https://su.quark.cn/4_eMHBJ".toHttpUrl().newBuilder()
-            .addQueryParameter("token", token)
-            .addQueryParameter("client_id", "532")
-            .addQueryParameter("ssb", "weblogin")
             .addQueryParameter("uc_param_str", "")
+            .addQueryParameter("token", token)
+            .addQueryParameter("client_id", CLIENT_ID.toString())
             .addQueryParameter(
                 "uc_biz_str",
                 "S:custom|OPT:SAREA@0|OPT:IMMERSIVE@1|OPT:BACK_BTN_STYLE@0"
@@ -118,11 +133,14 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
             .build()
             .toString()
 
-    private fun getJson(url: String): JSONObject {
+    private fun postForm(url: String, fields: Map<String, String>): JSONObject {
+        val body = FormBody.Builder().apply {
+            fields.forEach { (key, value) -> add(key, value) }
+        }.build()
         val request = Request.Builder()
             .url(url)
             .headers(commonHeaders())
-            .get()
+            .post(body)
             .build()
         client.newCall(request).execute().use { response ->
             val text = response.body?.string().orEmpty()
@@ -143,6 +161,7 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
     }.build()
 
     private companion object {
+        const val CLIENT_ID = 386
         const val DESKTOP_UA =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"

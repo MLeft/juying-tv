@@ -353,7 +353,7 @@ Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
 ### 9.1 夸克网盘
 
 - 非官方接口：Cookie 会过期；`412/31001/23018` 等错误要给出可操作提示。
-- 登录必须优先提供电视端「扫码登录」，不能让普通用户去电脑 F12 抓包：获取 `getTokenForQrcodeLogin` 令牌 → 生成 `su.quark.cn` 确认页二维码 → 轮询 `getServiceTicketByQrcodeToken` → 用 `account/info?st=&lw=scan` 换取 Cookie。Cookie 只保存在本机，禁止打印到日志。
+- 登录必须优先提供电视端「扫码登录」，不能让普通用户去电脑 F12 抓包：使用 PC 扫码 client（`client_id=386`，POST 表单携带 `v=1.2&request_id`）获取 `getTokenForQrcodeLogin` 令牌 → 生成 `su.quark.cn` 确认页二维码（同样 client_id=386）→ 轮询 `getServiceTicketByQrcodeToken` → 用 `account/info?st=&lw=scan` 换取 Cookie。Cookie 只保存在本机，禁止打印到日志。client_id 或请求方式不匹配会直接导致手机端“登录请求已过期”。
 - 列表/下载接口遇到 5xx 必须自动重试一次并记录状态码、fid 与响应摘要；避免一次瞬时故障中断整次扫描。错误状态在下一次成功扫描后清除。
 - 大目录禁止直接递归全盘；先列目录、让用户多选根路径，避免“目录文件过多”。
 - 预览图/缩略图接口返回的不一定是视频流，播放地址必须单独解析并校验。
