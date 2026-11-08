@@ -699,7 +699,10 @@ fun AddSourceScreen(
                     )
                 }
             }
-            Column(Modifier.width(330.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                Modifier.width(330.dp).padding(top = 20.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 if (!isWebDav) {
                     FocusableSurface(
                         onClick = { showQrLogin = true },

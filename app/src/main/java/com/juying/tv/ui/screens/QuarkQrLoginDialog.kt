@@ -76,25 +76,39 @@ fun QuarkQrLoginDialog(
         qr = null
         val auth = QuarkQrAuth(client)
         try {
-            val session = auth.createSession()
-            qr = generateQrBitmap(session.scanUrl, 640)
-            status = "请用夸克 App 扫码"
             while (true) {
-                delay(2_000)
-                when (val result = auth.poll(session.token)) {
-                    QuarkQrAuth.PollResult.Pending -> Unit
-                    QuarkQrAuth.PollResult.Expired -> {
-                        status = "二维码已过期，请点“刷新二维码”"
-                        error = true
+                val session = auth.createSession()
+                qr = generateQrBitmap(session.scanUrl, 640)
+                var secondsLeft = 120
+                status = "请用夸克 App 扫码（$secondsLeft 秒后自动刷新）"
+                var refresh = false
+                while (true) {
+                    delay(2_000)
+                    secondsLeft -= 2
+                    if (secondsLeft <= 0) {
+                        refresh = true
                         break
                     }
-                    is QuarkQrAuth.PollResult.Confirmed -> {
-                        status = "已确认，正在获取登录信息…"
-                        val cookie = auth.exchange(result.ticket)
-                        onCookie(cookie)
-                        return@LaunchedEffect
+                    when (val result = auth.poll(session.token)) {
+                        QuarkQrAuth.PollResult.Pending -> {
+                            status = "请用夸克 App 扫码（$secondsLeft 秒后自动刷新）"
+                        }
+                        QuarkQrAuth.PollResult.Expired -> {
+                            refresh = true
+                            break
+                        }
+                        is QuarkQrAuth.PollResult.Confirmed -> {
+                            status = "已确认，正在获取登录信息…"
+                            val cookie = auth.exchange(result.ticket)
+                            onCookie(cookie)
+                            return@LaunchedEffect
+                        }
                     }
                 }
+                if (!refresh) break
+                status = "二维码已自动刷新，请重新扫码"
+                error = false
+                delay(600)
             }
         } catch (e: CancellationException) {
             throw e
@@ -220,7 +234,7 @@ fun QuarkQrLoginDialog(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "二维码约 2 分钟内有效。扫码后请在手机上点“确认登录”。",
+                        "二维码每 2 分钟自动刷新；扫码后请在手机上点“确认登录”。",
                         color = JuyingColors.TextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
