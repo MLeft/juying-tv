@@ -1,6 +1,11 @@
 package com.juying.tv.ui.screens
 
 import com.juying.tv.ui.RegisterScreenFocus
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -81,9 +86,14 @@ fun CollectionDetailScreen(
     onBack: () -> Unit
 ) {
     val collections by viewModel.collections.collectAsStateWithLifecycle()
-    val items by viewModel.collectionItemsFlow(collectionId).collectAsStateWithLifecycle(emptyList())
+    // null 表示合集条目还在从 Room 读取；空列表才是真的“合集为空”。
+    // 返回合集页时若直接按空列表渲染，焦点会先落到“添加内容”，数据到达后也不会再纠正。
+    val itemsState by viewModel.collectionItemsFlow(collectionId)
+        .collectAsStateWithLifecycle(initialValue = null)
+    val items = itemsState.orEmpty()
     val allSeries by viewModel.series.collectAsStateWithLifecycle()
     val kidsSeries by viewModel.kidsSeries.collectAsStateWithLifecycle()
+    val seriesLoaded by viewModel.seriesLoaded.collectAsStateWithLifecycle()
 
     val collection = collections.firstOrNull { it.id == collectionId }
     val visibleById = remember(allSeries, kidsSeries, kidsMode) {
@@ -92,13 +102,55 @@ fun CollectionDetailScreen(
     val series = remember(items, visibleById) {
         items.sortedBy { it.sortIndex }.mapNotNull { visibleById[it.seriesId] }
     }
+    val dataReady = itemsState != null && seriesLoaded
     val addFocus = remember { FocusRequester() }
+    val editFocus = remember { FocusRequester() }
     val backFocus = remember { FocusRequester() }
-    RegisterScreenFocus(if (kidsMode) backFocus else addFocus)
+    val cardFocus = remember { FocusRequester() }
+    val gridState = rememberTvLazyGridState()
+    val rememberedSeriesId = com.juying.tv.ui.NavFocusMemory.collectionSeriesId
+    // 编辑/添加页返回时优先回到触发按钮；这是进入本次页面时捕获的入口，后续数据变化不参与。
+    val pendingAction = remember { com.juying.tv.ui.NavFocusMemory.collectionAction }
+    val actionFocus = when (pendingAction) {
+        "edit" -> editFocus
+        "add" -> addFocus
+        else -> null
+    }
+    val restoreIndex = remember(series, rememberedSeriesId) {
+        if (rememberedSeriesId == null) -1 else series.indexOfFirst { it.id == rememberedSeriesId }
+    }
+    val restoreSeries = restoreIndex >= 0
+    val entryTarget = when {
+        actionFocus != null -> actionFocus
+        !dataReady -> backFocus
+        restoreSeries -> cardFocus
+        kidsMode -> backFocus
+        else -> addFocus
+    }
+    RegisterScreenFocus(entryTarget)
 
+    // 入口标记只消费一次，避免影响之后的重新进入。
     LaunchedEffect(Unit) {
-        delay(180)
-        runCatching { (if (kidsMode) backFocus else addFocus).requestFocus() }
+        com.juying.tv.ui.NavFocusMemory.collectionAction = null
+    }
+
+    LaunchedEffect(dataReady, pendingAction, rememberedSeriesId, restoreIndex, series.size) {
+        if (pendingAction != null) {
+            // 标题栏按钮已完成组合，不需要等合集条目加载。
+            delay(160)
+        } else {
+            if (!dataReady) return@LaunchedEffect
+            delay(160)
+            if (restoreSeries) {
+                // 记住的卡片可能在屏幕外，先滚到它所在位置，等它完成组合再请求焦点。
+                runCatching { gridState.scrollToItem(restoreIndex) }
+                delay(80)
+            }
+        }
+        repeat(20) {
+            if (runCatching { entryTarget.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(100)
+        }
     }
 
     if (collection == null) {
@@ -122,32 +174,55 @@ fun CollectionDetailScreen(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "${series.size} 部内容 · 可自由调整顺序",
+                    if (dataReady) "${series.size} 部内容 · 可自由调整顺序" else "正在加载合集内容…",
                     color = JuyingColors.TextSecondary,
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (!kidsMode) {
-                    TvChip("编辑合集", onClick = onEdit, icon = Icons.Rounded.Edit)
-                    TvChip("添加内容", onClick = onAddContent, icon = Icons.Rounded.Add, focusRequester = addFocus)
+                    TvChip(
+                        "编辑合集",
+                        onClick = {
+                            com.juying.tv.ui.NavFocusMemory.collectionAction = "edit"
+                            onEdit()
+                        },
+                        icon = Icons.Rounded.Edit,
+                        focusRequester = editFocus
+                    )
+                    TvChip(
+                        "添加内容",
+                        onClick = {
+                            com.juying.tv.ui.NavFocusMemory.collectionAction = "add"
+                            onAddContent()
+                        },
+                        icon = Icons.Rounded.Add,
+                        focusRequester = addFocus
+                    )
                 }
                 TvChip("返回", onClick = onBack, icon = Icons.Rounded.ArrowBack, focusRequester = backFocus)
             }
         }
         Spacer(Modifier.height(22.dp))
-        if (series.isEmpty()) {
+        if (!dataReady) {
+            CollectionDetailSkeleton()
+        } else if (series.isEmpty()) {
             EmptyState(
                 title = "合集还是空的",
                 description = "把喜欢的剧集或电影添加进来，并按你的顺序排列。",
                 actionText = if (kidsMode) null else "添加内容",
-                action = if (kidsMode) null else onAddContent,
+                action = if (kidsMode) null else {
+                    {
+                        com.juying.tv.ui.NavFocusMemory.collectionAction = "add"
+                        onAddContent()
+                    }
+                },
                 focusRequester = addFocus
             )
         } else {
             TvLazyVerticalGrid(
                 columns = TvGridCells.Fixed(6),
-                state = rememberTvLazyGridState(),
+                state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -156,8 +231,41 @@ fun CollectionDetailScreen(
                 items(series, key = { it.id }) { item ->
                     PosterCard(
                         series = item,
-                        onClick = { onOpenSeries(item.id) },
-                        topBadge = if (collection.showOnHome) "首页" else null
+                        onClick = {
+                            com.juying.tv.ui.NavFocusMemory.collectionSeriesId = item.id
+                            onOpenSeries(item.id)
+                        },
+                        topBadge = if (collection.showOnHome) "首页" else null,
+                        focusRequester = if (item.id == rememberedSeriesId) cardFocus else null
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CollectionDetailSkeleton() {
+    val transition = rememberInfiniteTransition(label = "collectionSkeleton")
+    val alpha by transition.animateFloat(
+        initialValue = 0.26f,
+        targetValue = 0.44f,
+        animationSpec = infiniteRepeatable(animation = tween(900), repeatMode = RepeatMode.Reverse),
+        label = "collectionSkeletonAlpha"
+    )
+    Column(
+        Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
+    ) {
+        repeat(2) {
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                repeat(6) {
+                    Box(
+                        Modifier
+                            .weight(1f)
+                            .aspectRatio(2f / 3f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(JuyingColors.Surface.copy(alpha = alpha))
                     )
                 }
             }

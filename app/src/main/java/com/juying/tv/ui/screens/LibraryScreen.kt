@@ -135,12 +135,20 @@ fun LibraryScreen(
     val hasActiveFilter = searchQuery.isNotBlank() || kindFilter != "ALL"
     val firstTabFocus = remember { FocusRequester() }
     val firstContentFocus = remember { FocusRequester() }
-    RegisterScreenFocus(if (kidsMode) firstContentFocus else firstTabFocus)
+    val restoreCollection = !kidsMode && tab == LibraryTab.COLLECTIONS &&
+        com.juying.tv.ui.NavFocusMemory.collectionId != null
+    val restoreSeries = (kidsMode || tab == LibraryTab.ALL) &&
+        com.juying.tv.ui.NavFocusMemory.seriesId != null
+    val entryTarget = if (restoreCollection || restoreSeries || kidsMode) firstContentFocus else firstTabFocus
+    RegisterScreenFocus(entryTarget)
 
     LaunchedEffect(Unit) {
         delay(180)
-        if (kidsMode) runCatching { firstContentFocus.requestFocus() }
-        else runCatching { firstTabFocus.requestFocus() }
+        // 返回媒体库时目标卡片可能还没完成组合，重试几次直到焦点落位。
+        repeat(16) {
+            if (runCatching { entryTarget.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(100)
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 42.dp, end = 42.dp, top = 26.dp)) {
@@ -418,7 +426,12 @@ private fun CollectionsContent(
             CollectionCard(
                 collection = collection,
                 series = seriesByCollection[collection.id].orEmpty(),
-                onClick = { onOpenCollection(collection.id) },
+                onClick = {
+                    com.juying.tv.ui.NavFocusMemory.collectionId = collection.id
+                    com.juying.tv.ui.NavFocusMemory.collectionSeriesId = null
+                    com.juying.tv.ui.NavFocusMemory.collectionAction = null
+                    onOpenCollection(collection.id)
+                },
                 modifier = if (index >= lastCollectionRowStart) Modifier.blockDownAtBottom() else Modifier,
                 focusRequester = if (collection.id == restoreCollection?.id) firstContentFocus else null
             )
@@ -598,7 +611,10 @@ private fun AllSeriesGrid(
         itemsIndexed(series, key = { _, it -> it.id }) { index, item ->
             PosterCard(
                 series = item,
-                onClick = { onOpenSeries(item.id) },
+                onClick = {
+                    com.juying.tv.ui.NavFocusMemory.seriesId = item.id
+                    onOpenSeries(item.id)
+                },
                 modifier = if (index >= lastSeriesRowStart) Modifier.blockDownAtBottom() else Modifier,
                 focusRequester = if (item.id == restoreSeries?.id) firstFocus else null
             )

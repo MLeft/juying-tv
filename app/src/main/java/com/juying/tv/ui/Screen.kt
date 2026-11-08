@@ -1,5 +1,9 @@
 package com.juying.tv.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 sealed interface Screen {
     data object Home : Screen
     data object Library : Screen
@@ -33,6 +37,15 @@ sealed interface Screen {
 
 /** 记住最后一次聚焦的卡片，返回列表时回到原位。 */
 object NavFocusMemory {
-    var seriesId: String? = null
-    var collectionId: String? = null
+    var seriesId by mutableStateOf<String?>(null)
+    var collectionId by mutableStateOf<String?>(null)
+    var collectionSeriesId by mutableStateOf<String?>(null)
+
+    /** 从合集页进入编辑/添加页时记录的触发入口，返回时焦点回到对应按钮。 */
+    var collectionAction by mutableStateOf<String?>(null)
+    var sourceId by mutableStateOf<String?>(null)
+
+    /** 最近一次播放的单集，返回详情页时焦点回到这一集。 */
+    var episodeId by mutableStateOf<String?>(null)
+    var episodeSeriesId by mutableStateOf<String?>(null)
 }

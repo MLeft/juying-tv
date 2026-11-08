@@ -105,7 +105,14 @@ fun SourcesScreen(
     var showTypePicker by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<SourceEntity?>(null) }
     val addFocus = remember { FocusRequester() }
-    RegisterScreenFocus(addFocus)
+    val restoreSourceFocus = remember { FocusRequester() }
+    val restoreSourceId = com.juying.tv.ui.NavFocusMemory.sourceId
+    val entryTarget = if (restoreSourceId != null && sources.any { it.id == restoreSourceId }) {
+        restoreSourceFocus
+    } else {
+        addFocus
+    }
+    RegisterScreenFocus(entryTarget)
 
     val mediaPermission = if (Build.VERSION.SDK_INT >= 33) {
         Manifest.permission.READ_MEDIA_VIDEO
@@ -133,7 +140,10 @@ fun SourcesScreen(
 
     LaunchedEffect(Unit) {
         delay(160)
-        runCatching { addFocus.requestFocus() }
+        repeat(16) {
+            if (runCatching { entryTarget.requestFocus() }.isSuccess) return@LaunchedEffect
+            delay(100)
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(start = 32.dp, end = 32.dp, top = 20.dp)) {
@@ -191,13 +201,21 @@ fun SourcesScreen(
                 items(sources, key = { it.id }) { source ->
                     SourceCard(
                         source = source,
-                        onScan = { viewModel.scanAll(source.id) },
-                        onEdit = { onOpenAdd(source.type, source.id) },
+                        onScan = {
+                            com.juying.tv.ui.NavFocusMemory.sourceId = source.id
+                            viewModel.scanAll(source.id)
+                        },
+                        onEdit = {
+                            com.juying.tv.ui.NavFocusMemory.sourceId = source.id
+                            onOpenAdd(source.type, source.id)
+                        },
                         onDelete = { deleteTarget = source },
                         onRelink = {
+                            com.juying.tv.ui.NavFocusMemory.sourceId = source.id
                             if (source.type == SourceType.LOCAL) treeLauncher.launch(null)
                             else onOpenAdd(source.type, source.id)
-                        }
+                        },
+                        focusRequester = if (source.id == restoreSourceId) restoreSourceFocus else null
                     )
                 }
             }
@@ -298,7 +316,8 @@ private fun SourceCard(
     onScan: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onRelink: () -> Unit
+    onRelink: () -> Unit,
+    focusRequester: FocusRequester? = null
 ) {
     val icon = when (source.type) {
         SourceType.LOCAL -> Icons.Rounded.Folder
@@ -359,9 +378,15 @@ private fun SourceCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TvChip("扫描", onClick = onScan, icon = Icons.Rounded.Refresh)
+                val editFocus = if (source.type == SourceType.WEBDAV || source.type == SourceType.QUARK) focusRequester else null
+                TvChip(
+                    "扫描",
+                    onClick = onScan,
+                    icon = Icons.Rounded.Refresh,
+                    focusRequester = if (editFocus == null) focusRequester else null
+                )
                 if (source.type == SourceType.WEBDAV || source.type == SourceType.QUARK) {
-                    TvChip("编辑", onClick = onEdit, icon = Icons.Rounded.Edit)
+                    TvChip("编辑", onClick = onEdit, icon = Icons.Rounded.Edit, focusRequester = editFocus)
                 }
                 if (source.type == SourceType.LOCAL) {
                     TvChip("重新授权", onClick = onRelink)

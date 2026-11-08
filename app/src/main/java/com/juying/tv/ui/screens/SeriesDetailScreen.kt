@@ -112,7 +112,10 @@ fun SeriesDetailScreen(
     val backFocus = remember { FocusRequester() }
     val chipsFocus = remember { FocusRequester() }
     val firstEpisodeFocus = remember { FocusRequester() }
-    RegisterScreenFocus(playFocus)
+    val episodeFocus = remember { FocusRequester() }
+    val episodeGridState = rememberTvLazyGridState()
+    val rememberedEpisodeId = com.juying.tv.ui.NavFocusMemory.episodeId
+        .takeIf { com.juying.tv.ui.NavFocusMemory.episodeSeriesId == seriesId }
 
     val progressById = remember(progress) { progress.associateBy { it.mediaId } }
     val resume = remember(media, progressById) {
@@ -131,16 +134,36 @@ fun SeriesDetailScreen(
     val visibleMedia = remember(media, selectedSeason) {
         if (selectedSeason == null) media else media.filter { it.season == selectedSeason }
     }
+    // 从播放器返回时，焦点回到刚播的那一集；没有记录时仍落在播放按钮。
+    val restoreEpisodeIndex = remember(visibleMedia, rememberedEpisodeId) {
+        if (rememberedEpisodeId == null) -1 else visibleMedia.indexOfFirst { it.id == rememberedEpisodeId }
+    }
+    val restoreEpisode = restoreEpisodeIndex >= 0
+    val entryTarget = if (restoreEpisode) episodeFocus else playFocus
+    RegisterScreenFocus(entryTarget)
+    var entryFocusDone by remember(seriesId) { mutableStateOf(false) }
+    LaunchedEffect(seriesId, media.size, restoreEpisodeIndex) {
+        if (entryFocusDone) return@LaunchedEffect
+        // 单集列表尚未返回时先等待，避免把焦点抢先放到播放按钮。
+        if (rememberedEpisodeId != null && media.isEmpty()) delay(900) else delay(200)
+        if (restoreEpisode) {
+            runCatching { episodeGridState.scrollToItem(restoreEpisodeIndex) }
+            delay(80)
+        }
+        repeat(16) {
+            if (runCatching { entryTarget.requestFocus() }.isSuccess) {
+                entryFocusDone = true
+                return@LaunchedEffect
+            }
+            delay(100)
+        }
+        entryFocusDone = true
+    }
     LaunchedEffect(seasons) {
         if (selectedSeason != null && selectedSeason !in seasons) selectedSeason = null
     }
     val sourceName = remember(sources, series) {
         sources.firstOrNull { it.id == series?.sourceId }?.name
-    }
-
-    LaunchedEffect(seriesId, media.size) {
-        delay(200)
-        runCatching { playFocus.requestFocus() }
     }
 
     LaunchedEffect(showEdit) {
@@ -312,7 +335,11 @@ fun SeriesDetailScreen(
                             resume != null -> "继续 ${episodeDisplay(target, multiSeason)}"
                             else -> if (current.kind == SeriesKind.MOVIE) "播放电影" else "从第一集开始"
                         },
-                        onClick = { target?.let { onPlay(it.id, seriesId, false) } },
+                        onClick = {
+                            com.juying.tv.ui.NavFocusMemory.episodeId = null
+                            com.juying.tv.ui.NavFocusMemory.episodeSeriesId = null
+                            target?.let { onPlay(it.id, seriesId, false) }
+                        },
                         icon = Icons.Rounded.PlayArrow,
                         focusRequester = playFocus,
                         enabled = target != null,
@@ -324,7 +351,11 @@ fun SeriesDetailScreen(
                     if (resume != null && current.kind != SeriesKind.MOVIE) {
                         TvButton(
                             "从头播放",
-                            { media.firstOrNull()?.let { onPlay(it.id, seriesId, true) } },
+                            {
+                                com.juying.tv.ui.NavFocusMemory.episodeId = null
+                                com.juying.tv.ui.NavFocusMemory.episodeSeriesId = null
+                                media.firstOrNull()?.let { onPlay(it.id, seriesId, true) }
+                            },
                             primary = false,
                             modifier = Modifier.focusProperties {
                                 up = backFocus
@@ -354,7 +385,11 @@ fun SeriesDetailScreen(
                 TvChip(
                     "上次看到：${episodeDisplay(resume, multiSeason)}",
                     selected = true,
-                    onClick = { onPlay(resume.id, seriesId, false) },
+                    onClick = {
+                        com.juying.tv.ui.NavFocusMemory.episodeId = resume.id
+                        com.juying.tv.ui.NavFocusMemory.episodeSeriesId = seriesId
+                        onPlay(resume.id, seriesId, false)
+                    },
                     modifier = Modifier.focusProperties {
                         up = playFocus
                         down = belowPlay
@@ -405,7 +440,7 @@ fun SeriesDetailScreen(
         } else {
             TvLazyVerticalGrid(
                 columns = TvGridCells.Fixed(4),
-                state = rememberTvLazyGridState(),
+                state = episodeGridState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -427,8 +462,15 @@ fun SeriesDetailScreen(
                         progress = fraction,
                         isCurrent = item.id == resume?.id,
                         multiSeason = multiSeason,
-                        onClick = { onPlay(item.id, seriesId, false) },
+                        onClick = {
+                            com.juying.tv.ui.NavFocusMemory.episodeId = item.id
+                            com.juying.tv.ui.NavFocusMemory.episodeSeriesId = seriesId
+                            onPlay(item.id, seriesId, false)
+                        },
                         modifier = when {
+                            item.id == rememberedEpisodeId -> Modifier
+                                .focusRequester(episodeFocus)
+                                .focusProperties { up = firstRowUp }
                             index == 0 -> Modifier
                                 .focusRequester(firstEpisodeFocus)
                                 .focusProperties { up = firstRowUp }
