@@ -185,7 +185,7 @@ fun SourcesScreen(
             TvLazyColumn(
                 state = rememberTvLazyListState(),
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 40.dp),
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(sources, key = { it.id }) { source ->
@@ -481,6 +481,7 @@ fun AddSourceScreen(
     var showPhone by remember { mutableStateOf(false) }
     var showQuarkPicker by remember { mutableStateOf(false) }
     var showCookieEditor by remember { mutableStateOf(false) }
+    var showQrLogin by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
     var testResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
     val scope = rememberCoroutineScope()
@@ -597,6 +598,7 @@ fun AddSourceScreen(
                 .weight(1f)
                 .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
+                .padding(top = 12.dp)
         ) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -689,7 +691,7 @@ fun AddSourceScreen(
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Cookie 内容已隐藏，只保存在本机。点击上方「扫描范围」可浏览网盘并多选目录，避免整个网盘文件过多。",
+                        "没有电脑也可以点下方「扫码登录」，用夸克 App 扫描电视上的二维码，Cookie 会自动填入。",
                         color = JuyingColors.TextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
@@ -760,6 +762,12 @@ fun AddSourceScreen(
                     primary = false,
                     icon = Icons.Rounded.Folder
                 )
+                TvButton(
+                    "扫码登录",
+                    { showQrLogin = true },
+                    primary = false,
+                    icon = Icons.Rounded.QrCode2
+                )
             }
             TvButton(
                 if (testing) "测试中…" else "测试连接",
@@ -807,7 +815,7 @@ fun AddSourceScreen(
                     "粘贴完整 Cookie",
                     cookie,
                     multiline = true,
-                    hint = "电脑浏览器登录 pan.quark.cn，F12 → 网络 → 刷新，复制任意请求的 Cookie 请求头。Cookie 等同于账号密码，请勿分享。"
+                    hint = "推荐直接点电视上的「扫码登录」自动获取；如需手动填写，可登录夸克网页版后复制 Cookie。Cookie 等同于账号密码，请勿分享。"
                 )
             )
         }
@@ -838,6 +846,17 @@ fun AddSourceScreen(
             onSave = {
                 cookie = it
                 showCookieEditor = false
+            }
+        )
+    }
+
+    if (showQrLogin) {
+        QuarkQrLoginDialog(
+            onDismiss = { showQrLogin = false },
+            onCookie = { raw ->
+                cookie = raw
+                showQrLogin = false
+                testResult = true to "已获取夸克登录信息，请点击“保存并扫描”"
             }
         )
     }

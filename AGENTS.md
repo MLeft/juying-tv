@@ -31,6 +31,7 @@
 - 优先复用 `FocusableSurface`、`TvChip`、`TvButton`、`ProgressLine`、`PlayerMenu`、`PlayerMenuRow`。
 - 表单输入统一用 `TvTextField`，点击选择类字段统一用 `TvPickerField`；标签在框外，禁止手写第二套输入框样式。
 - 焦点态必须使用「暖底 `SurfaceFocused` + 2dp 金边 + `Modifier.focusGlow` 连续渐隐柔光 + 缩放」四件套；选中态只保留平面标记，禁止共用柔光/金边。
+- 滚动容器与 Lazy 列表必须在四周预留至少 10dp 内边距，避免焦点柔光被裁切。
 - 焦点动画：spring(damping 0.72 / stiffness 560)；颜色与泛光过渡 150ms；面板进出 120–180ms。
 - 新增面板先对照规范 §4.4 的规格表选类型；没有对应类型时先补规格。
 

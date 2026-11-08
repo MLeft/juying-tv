@@ -251,7 +251,7 @@ fun QuarkFolderPickerDialog(
                                 else -> TvLazyColumn(
                                     state = rememberTvLazyListState(),
                                     modifier = Modifier.fillMaxSize(),
-                                    contentPadding = PaddingValues(bottom = 6.dp),
+                                    contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
                                     items(dirs, key = { it.fid }) { dir ->

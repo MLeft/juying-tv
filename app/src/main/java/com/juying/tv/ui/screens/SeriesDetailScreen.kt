@@ -407,7 +407,7 @@ fun SeriesDetailScreen(
                 columns = TvGridCells.Fixed(4),
                 state = rememberTvLazyGridState(),
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 20.dp),
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {

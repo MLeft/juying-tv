@@ -1569,7 +1569,7 @@ private fun EpisodePanel(
                 columns = TvGridCells.Fixed(2),
                 state = state,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
+                contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 24.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -2031,7 +2031,7 @@ private fun LocalSubtitleBrowserPanel(
                     state = state,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
-                    contentPadding = PaddingValues(bottom = 16.dp)
+                    contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 16.dp)
                 ) {
                     items(entries, key = { it.absolutePath }) { file ->
                         FocusableSurface(
@@ -2139,7 +2139,7 @@ private fun OnlineSubtitleResultPanel(
                     state = state,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(bottom = 16.dp)
+                    contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 16.dp)
                 ) {
                     items(results, key = { it.id }) { sub ->
                         FocusableSurface(

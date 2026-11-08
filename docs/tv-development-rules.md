@@ -191,6 +191,12 @@ Modifier.onPreviewKeyEvent { e ->
 
 选中态只保留平面标记（金色文字、圆点、勾选、左侧短条），**不得使用泛光、缩放或 2dp 金边**；泛光与描边是焦点的专属签名。
 
+#### 泛光安全边距（必须）
+
+- 焦点柔光向外约 10dp，任何会裁切内容的容器（`verticalScroll`、Lazy 列表、圆角面板）都必须在内容边缘留出至少 **10dp 内边距**。
+- Lazy 列表用 `contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, ...)`；滚动 Column 在内容顶部/底部加 10–12dp padding。否则首项/边缘项的柔光会被切平。
+- 新增列表或滚动页时，先确认第一项和最后一项聚焦时泛光完整可见。
+
 ### 4.4 面板规格（新增面板必须复用）
 
 | 类型 | 宽度 | 位置/说明 |
@@ -345,6 +351,7 @@ Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
 ### 9.1 夸克网盘
 
 - 非官方接口：Cookie 会过期；`412/31001/23018` 等错误要给出可操作提示。
+- 登录必须优先提供电视端「扫码登录」，不能让普通用户去电脑 F12 抓包：获取 `getTokenForQrcodeLogin` 令牌 → 生成 `su.quark.cn` 确认页二维码 → 轮询 `getServiceTicketByQrcodeToken` → 用 `account/info?st=&lw=scan` 换取 Cookie。Cookie 只保存在本机，禁止打印到日志。
 - 列表/下载接口遇到 5xx 必须自动重试一次并记录状态码、fid 与响应摘要；避免一次瞬时故障中断整次扫描。错误状态在下一次成功扫描后清除。
 - 大目录禁止直接递归全盘；先列目录、让用户多选根路径，避免“目录文件过多”。
 - 预览图/缩略图接口返回的不一定是视频流，播放地址必须单独解析并校验。
@@ -457,6 +464,7 @@ ADB_USB=0 ~/ptools33/platform-tools/adb shell dumpsys package com.juying.tv | gr
 | 新增板块后怎么按都进不去 | 中段遗留 `down = Cancel` | R03 / 3.3 |
 | 以为光标在导航，其实在内容区 | 选中态用了焦点边框 | R04 / 3.5 |
 | 焦点不够醒目、和金色选中元素混在一起 | 焦点只有金边，没有泛光和暖底；选中态过度高亮 | R04 / 4.3 焦点四件套 |
+| 聚焦时泛光被切平/缺一块 | 滚动或 Lazy 容器没有留出 10dp 安全内边距 | 4.3 泛光安全边距 |
 | 面板很宽、右侧大片留白 | 没有复用面板规格，用信息量决定宽度 | R05 / 4.4 |
 | 胶囊里的文字偏左 | 缺 `fillMaxWidth + TextAlign.Center` | R06 / 4.5 |
 | 同一表单里输入框高矮/标签位置不一 | 选择器、状态块各自手写样式 | 4.9 |

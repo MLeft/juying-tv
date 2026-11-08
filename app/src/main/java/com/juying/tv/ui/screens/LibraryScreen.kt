@@ -408,7 +408,7 @@ private fun CollectionsContent(
         columns = TvGridCells.Fixed(3),
         state = rememberTvLazyGridState(),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 40.dp),
+        contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -588,7 +588,7 @@ private fun AllSeriesGrid(
         columns = TvGridCells.Fixed(6),
         state = rememberTvLazyGridState(),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 40.dp, top = 4.dp),
+        contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
@@ -624,7 +624,7 @@ private fun ManageContent(
     TvLazyColumn(
         state = rememberTvLazyListState(),
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 40.dp),
+        contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
