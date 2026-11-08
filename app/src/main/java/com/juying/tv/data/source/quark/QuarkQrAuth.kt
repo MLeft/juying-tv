@@ -111,13 +111,25 @@ class QuarkQrAuth(baseClient: OkHttpClient) {
         }
         runCatching { getJson("https://pan.quark.cn/account/info") }
         runCatching { getText("https://pan.quark.cn/list") }
+        // 夸克 API 通过 Set-Cookie 续期 __puus；用一次最小目录请求补齐它。
+        runCatching {
+            getJson(
+                "https://drive-pc.quark.cn/1/clouddrive/file/sort" +
+                    "?pr=ucpro&fr=pc&uc_param_str=&pdir_fid=0&_page=1&_size=1" +
+                    "&_fetch_total=0&_fetch_sub_dirs=0&_sort=file_type:asc,file_name:asc"
+            )
+        }
         val cookie = synchronized(cookieStore) {
             cookieStore.joinToString("; ") { "${it.name}=${it.value}" }
         }.trim()
         val names = synchronized(cookieStore) { cookieStore.map { it.name }.distinct() }
         android.util.Log.i("JuyingQuarkQr", "login cookies: ${names.joinToString(",")}")
-        if (!cookie.contains("__puus=") || !cookie.contains("__pus=")) {
-            throw IOException("登录成功但未获取到完整 Cookie，请刷新二维码重试")
+        if (!cookie.contains("__pus=")) {
+            throw IOException("登录成功但未获取到登录 Cookie，请刷新二维码重试")
+        }
+        if (!cookie.contains("__puus=")) {
+            // __puus 会由 drive-pc 接口响应续期；首次扫描/播放时自动补齐。
+            android.util.Log.w("JuyingQuarkQr", "login cookie missing __puus, will renew via API")
         }
         cookie
     }
