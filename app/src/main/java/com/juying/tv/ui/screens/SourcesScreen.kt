@@ -814,14 +814,6 @@ fun AddSourceScreen(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             TvButton("保存并扫描", { save() })
-            if (!isWebDav) {
-                TvButton(
-                    "选择扫描目录",
-                    { openQuarkPicker() },
-                    primary = false,
-                    icon = Icons.Rounded.Folder
-                )
-            }
             TvButton(
                 if (testing) "测试中…" else "测试连接",
                 onClick = {

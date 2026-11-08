@@ -12,8 +12,8 @@ android {
         applicationId = "com.juying.tv"
         minSdk = 28
         targetSdk = 34
-        versionCode = 56
-        versionName = "1.5.19"
+        versionCode = 57
+        versionName = "1.5.20"
         vectorDrawables.useSupportLibrary = true
         ndk {
             // 电视为 armeabi-v7a；同时保留 arm64 以兼容后续设备，避免打包 x86 FFmpeg 库。

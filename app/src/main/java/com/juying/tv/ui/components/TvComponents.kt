@@ -41,6 +41,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Wifi
 import androidx.compose.material3.Icon
@@ -824,6 +825,13 @@ fun TvPickerField(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Rounded.ExpandMore,
+                    contentDescription = "选择",
+                    tint = if (focused) JuyingColors.Gold else JuyingColors.TextMuted,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
