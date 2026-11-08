@@ -687,37 +687,93 @@ fun AddSourceScreen(
                                 Spacer(Modifier.width(8.dp))
                             }
                             TvChip("手动编辑", onClick = { showCookieEditor = true })
+                            Spacer(Modifier.width(8.dp))
+                            TvChip("手机填写", onClick = { showPhone = true })
                         }
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "没有电脑也可以点下方「扫码登录」，用夸克 App 扫描电视上的二维码，Cookie 会自动填入。",
+                        "点右侧「扫码登录」，用夸克 App 扫一扫，Cookie 会自动填入；也可以手动编辑或让手机填写。",
                         color = JuyingColors.TextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
             Column(Modifier.width(330.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                FocusableSurface(
-                    onClick = { showPhone = true },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    focusedScale = 1.02f,
-                    backgroundColor = JuyingColors.Surface.copy(alpha = 0.35f),
-                    focusedBackgroundColor = JuyingColors.SurfaceFocused,
-                    borderColor = JuyingColors.Outline.copy(alpha = 0.65f),
-                    focusedBorderColor = JuyingColors.Gold
-                ) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.Center) {
-                        Icon(Icons.Rounded.QrCode2, contentDescription = null, tint = JuyingColors.Gold, modifier = Modifier.size(26.dp))
-                        Spacer(Modifier.height(10.dp))
-                        Text("用手机填写", color = JuyingColors.TextPrimary, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "长地址、Cookie 用遥控器输入很麻烦。扫码后在手机上填写，电视会立即接收。",
-                            color = JuyingColors.TextSecondary,
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 4
-                        )
+                if (!isWebDav) {
+                    FocusableSurface(
+                        onClick = { showQrLogin = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        focusedScale = 1.02f,
+                        backgroundColor = JuyingColors.Gold.copy(alpha = 0.12f),
+                        focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                        borderColor = JuyingColors.Gold.copy(alpha = 0.4f),
+                        focusedBorderColor = JuyingColors.Gold
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.Center) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Rounded.QrCode2,
+                                    contentDescription = null,
+                                    tint = JuyingColors.Gold,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                                Spacer(Modifier.weight(1f))
+                                Box(
+                                    Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(JuyingColors.Gold.copy(alpha = 0.18f))
+                                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Text(
+                                        "推荐",
+                                        color = JuyingColors.Gold,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                if (cookie.isBlank()) "扫码登录" else "重新扫码登录",
+                                color = JuyingColors.TextPrimary,
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                "用夸克 App 扫一扫，自动填入 Cookie，不需要电脑",
+                                color = JuyingColors.TextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 3
+                            )
+                        }
+                    }
+                } else {
+                    FocusableSurface(
+                        onClick = { showPhone = true },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        focusedScale = 1.02f,
+                        backgroundColor = JuyingColors.Surface.copy(alpha = 0.35f),
+                        focusedBackgroundColor = JuyingColors.SurfaceFocused,
+                        borderColor = JuyingColors.Outline.copy(alpha = 0.65f),
+                        focusedBorderColor = JuyingColors.Gold
+                    ) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.Center) {
+                            Icon(Icons.Rounded.QrCode2, contentDescription = null, tint = JuyingColors.Gold, modifier = Modifier.size(26.dp))
+                            Spacer(Modifier.height(10.dp))
+                            Text("用手机填写", color = JuyingColors.TextPrimary, style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                "长地址、Cookie 用遥控器输入很麻烦。扫码后在手机上填写，电视会立即接收。",
+                                color = JuyingColors.TextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 4
+                            )
+                        }
                     }
                 }
                 val result = testResult
@@ -761,12 +817,6 @@ fun AddSourceScreen(
                     { openQuarkPicker() },
                     primary = false,
                     icon = Icons.Rounded.Folder
-                )
-                TvButton(
-                    "扫码登录",
-                    { showQrLogin = true },
-                    primary = false,
-                    icon = Icons.Rounded.QrCode2
                 )
             }
             TvButton(
