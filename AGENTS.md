@@ -29,6 +29,7 @@
 - 画布按 **960×540dp**（1920×1080 / 320dpi），页面左右 36dp 安全边距。
 - 颜色、字号、圆角只从 `JuyingColors` / `JuyingTheme` 取；禁止在业务代码新造近似色。
 - 优先复用 `FocusableSurface`、`TvChip`、`TvButton`、`ProgressLine`、`PlayerMenu`、`PlayerMenuRow`。
+- 表单输入统一用 `TvTextField`，点击选择类字段统一用 `TvPickerField`；标签在框外，禁止手写第二套输入框样式。
 - 焦点态必须使用「暖底 `SurfaceFocused` + 2dp 金边 + `Modifier.focusGlow` 双层描边与彩色阴影 + 缩放」四件套；选中态只保留平面标记，禁止共用泛光/金边。
 - 焦点动画：spring(damping 0.72 / stiffness 560)；颜色与泛光过渡 150ms；面板进出 120–180ms。
 - 新增面板先对照规范 §4.4 的规格表选类型；没有对应类型时先补规格。

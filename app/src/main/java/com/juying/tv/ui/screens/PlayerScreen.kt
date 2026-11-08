@@ -26,12 +26,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.border
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.TextRange
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
@@ -92,7 +87,6 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -144,6 +138,7 @@ import com.juying.tv.ui.components.ProgressLine
 import com.juying.tv.ui.components.TvButton
 import com.juying.tv.ui.components.TvChip
 import com.juying.tv.ui.components.TvDialog
+import com.juying.tv.ui.components.TvTextField
 import com.juying.tv.ui.theme.JuyingColors
 import com.juying.tv.util.formatDuration
 import com.juying.tv.util.formatEpisode
@@ -1882,14 +1877,6 @@ private fun OnlineSubtitleSearchDialog(
     onSearch: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var field by remember {
-        mutableStateOf(TextFieldValue(query, selection = TextRange(query.length)))
-    }
-    LaunchedEffect(query) {
-        if (field.text != query) {
-            field = TextFieldValue(query, selection = TextRange(query.length))
-        }
-    }
     val searchFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         delay(120)
@@ -1905,32 +1892,19 @@ private fun OnlineSubtitleSearchDialog(
             style = MaterialTheme.typography.bodyMedium
         )
         Spacer(Modifier.height(18.dp))
-        BasicTextField(
-            value = field,
-            onValueChange = {
-                field = it
-                onQueryChange(it.text)
-            },
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White),
-            cursorBrush = SolidColor(JuyingColors.Gold),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { onSearch() }),
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(JuyingColors.Surface)
-                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
-                .padding(horizontal = 16.dp, vertical = 14.dp)
+        TvTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = "搜索关键词",
+            placeholder = "输入剧集或单集名称",
+            imeAction = ImeAction.Search,
+            onImeAction = onSearch
         )
         Spacer(Modifier.height(20.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TvButton(
                 "清空",
-                {
-                    field = TextFieldValue("")
-                    onQueryChange("")
-                },
+                { onQueryChange("") },
                 primary = false
             )
             Spacer(Modifier.width(10.dp))

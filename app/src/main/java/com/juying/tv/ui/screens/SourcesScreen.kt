@@ -83,7 +83,10 @@ import com.juying.tv.ui.components.PhoneAssistDialog
 import com.juying.tv.ui.components.TvButton
 import com.juying.tv.ui.components.TvChip
 import com.juying.tv.ui.components.TvDialog
+import com.juying.tv.ui.components.TvFieldLabel
+import com.juying.tv.ui.components.TvPickerField
 import com.juying.tv.ui.components.TvTextField
+import com.juying.tv.ui.components.focusGlow
 import com.juying.tv.ui.theme.JuyingColors
 import com.juying.tv.ui.util.PhoneField
 import com.juying.tv.util.formatDate
@@ -533,7 +536,7 @@ fun AddSourceScreen(
     }
 
     val scopeSummary = when {
-        selectedRoots.isEmpty() -> "整个网盘（建议选择具体文件夹）"
+        selectedRoots.isEmpty() -> "整个网盘"
         selectedRoots.size <= 2 -> selectedRoots.joinToString("、") { it.name }
         else -> selectedRoots.take(2).joinToString("、") { it.name } + " 等 ${selectedRoots.size} 个目录"
     }
@@ -616,42 +619,13 @@ fun AddSourceScreen(
                             modifier = Modifier.weight(1.4f)
                         )
                     } else {
-                        FocusableSurface(
+                        TvPickerField(
+                            label = "扫描范围（可多选）",
+                            value = scopeSummary,
                             onClick = { openQuarkPicker() },
-                            modifier = Modifier.weight(1f).heightIn(min = 74.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            focusedScale = 1.015f,
-                            backgroundColor = JuyingColors.BackgroundAlt,
-                            focusedBackgroundColor = JuyingColors.SurfaceFocused,
-                            borderColor = JuyingColors.Outline,
-                            focusedBorderColor = JuyingColors.Gold
-                        ) {
-                            Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                                Text(
-                                    "扫描范围（可多选）",
-                                    color = JuyingColors.TextSecondary,
-                                    style = MaterialTheme.typography.labelMedium
-                                )
-                                Spacer(Modifier.height(5.dp))
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Rounded.Folder,
-                                        contentDescription = null,
-                                        tint = JuyingColors.Gold,
-                                        modifier = Modifier.size(17.dp)
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(
-                                        scopeSummary,
-                                        color = JuyingColors.TextPrimary,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
+                            icon = Icons.Rounded.Folder,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
                 if (isWebDav) {
@@ -680,49 +654,43 @@ fun AddSourceScreen(
                         keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri
                     )
                 } else {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(JuyingColors.BackgroundAlt)
-                            .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 14.dp, vertical = 11.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Rounded.QrCode2,
-                            contentDescription = null,
-                            tint = JuyingColors.Gold,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "夸克 Cookie",
-                                color = JuyingColors.TextSecondary,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                if (cookie.isBlank()) {
-                                    "未填写 · 推荐用扫码在手机上粘贴"
-                                } else {
-                                    "已填写 · ${cookie.length} 个字符"
-                                },
-                                color = if (cookie.isBlank()) JuyingColors.TextMuted else JuyingColors.Green,
-                                style = MaterialTheme.typography.bodyMedium
-                            )
+                    Column {
+                        TvFieldLabel("夸克 Cookie", focused = false)
+                        Spacer(Modifier.height(7.dp))
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 58.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(JuyingColors.BackgroundAlt)
+                                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
+                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    if (cookie.isBlank()) "未填写" else "已填写 · ${cookie.length} 个字符",
+                                    color = if (cookie.isBlank()) JuyingColors.TextMuted else JuyingColors.TextPrimary,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    if (cookie.isBlank()) "推荐用手机扫码填写" else "内容已隐藏，只保存在本机",
+                                    color = JuyingColors.TextMuted,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            if (cookie.isNotBlank()) {
+                                TvChip("清除", onClick = { cookie = "" })
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            TvChip("手动编辑", onClick = { showCookieEditor = true })
                         }
-                        if (cookie.isNotBlank()) {
-                            TvChip("清除", onClick = { cookie = "" })
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        TvChip("手动编辑", onClick = { showCookieEditor = true })
                     }
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Cookie 内容已隐藏，只保存在本机。点击上方「扫描范围」可浏览网盘并多选目录，避免整个网盘文件过多。",
-                        color = JuyingColors.Gold,
+                        color = JuyingColors.TextMuted,
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -731,15 +699,15 @@ fun AddSourceScreen(
                 FocusableSurface(
                     onClick = { showPhone = true },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(16.dp),
                     focusedScale = 1.02f,
-                    backgroundColor = JuyingColors.Gold.copy(alpha = 0.12f),
+                    backgroundColor = JuyingColors.Surface.copy(alpha = 0.35f),
                     focusedBackgroundColor = JuyingColors.SurfaceFocused,
-                    borderColor = JuyingColors.Gold.copy(alpha = 0.4f),
+                    borderColor = JuyingColors.Outline.copy(alpha = 0.65f),
                     focusedBorderColor = JuyingColors.Gold
                 ) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.Center) {
-                        Icon(Icons.Rounded.QrCode2, contentDescription = null, tint = JuyingColors.Gold, modifier = Modifier.size(30.dp))
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.Center) {
+                        Icon(Icons.Rounded.QrCode2, contentDescription = null, tint = JuyingColors.Gold, modifier = Modifier.size(26.dp))
                         Spacer(Modifier.height(10.dp))
                         Text("用手机填写", color = JuyingColors.TextPrimary, style = MaterialTheme.typography.titleMedium)
                         Text(
@@ -908,6 +876,7 @@ private fun CookieEditorDialog(
     }
     val fieldFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    var focused by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(150)
@@ -920,13 +889,20 @@ private fun CookieEditorDialog(
             "Cookie 只在电视本机保存；推荐优先使用手机扫码填写"
         )
         Spacer(Modifier.height(14.dp))
+        TvFieldLabel("Cookie 内容", focused)
+        Spacer(Modifier.height(7.dp))
         Box(
             Modifier
                 .fillMaxWidth()
                 .height(170.dp)
+                .focusGlow(focused, RoundedCornerShape(12.dp))
                 .clip(RoundedCornerShape(12.dp))
                 .background(JuyingColors.BackgroundAlt)
-                .border(1.dp, JuyingColors.Outline, RoundedCornerShape(12.dp))
+                .border(
+                    if (focused) 2.dp else 1.dp,
+                    if (focused) JuyingColors.Gold else JuyingColors.Outline,
+                    RoundedCornerShape(12.dp)
+                )
                 .padding(12.dp)
         ) {
             if (textValue.text.isEmpty()) {
@@ -943,7 +919,10 @@ private fun CookieEditorDialog(
                 cursorBrush = SolidColor(JuyingColors.Gold),
                 modifier = Modifier
                     .fillMaxSize()
-                    .onFocusChanged { if (it.isFocused) keyboard?.show() }
+                    .onFocusChanged {
+                        focused = it.isFocused
+                        if (it.isFocused) keyboard?.show()
+                    }
                     .focusRequester(fieldFocus)
             )
         }

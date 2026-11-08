@@ -613,10 +613,10 @@ fun TvDialog(
         ) {
             Column(
                 modifier = modifier
-                    .shadow(30.dp, RoundedCornerShape(26.dp))
-                    .clip(RoundedCornerShape(26.dp))
+                    .shadow(30.dp, RoundedCornerShape(24.dp))
+                    .clip(RoundedCornerShape(24.dp))
                     .background(Brush.verticalGradient(listOf(Color(0xFF152134), Color(0xFF0D1624))))
-                    .border(1.dp, JuyingColors.Outline.copy(alpha = 0.8f), RoundedCornerShape(26.dp))
+                    .border(1.dp, JuyingColors.Outline.copy(alpha = 0.8f), RoundedCornerShape(24.dp))
                     .padding(30.dp),
                 content = content
             )
@@ -678,6 +678,16 @@ fun ConfirmDialog(
 }
 
 @Composable
+fun TvFieldLabel(text: String, focused: Boolean, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        color = if (focused) JuyingColors.Gold else JuyingColors.TextSecondary,
+        style = MaterialTheme.typography.labelMedium,
+        modifier = modifier
+    )
+}
+
+@Composable
 fun TvTextField(
     value: String,
     onValueChange: (String) -> Unit,
@@ -688,7 +698,9 @@ fun TvTextField(
     minLines: Int = 1,
     password: Boolean = false,
     focusRequester: FocusRequester? = null,
-    keyboardType: KeyboardType = KeyboardType.Text
+    keyboardType: KeyboardType = KeyboardType.Text,
+    imeAction: ImeAction = ImeAction.Done,
+    onImeAction: (() -> Unit)? = null
 ) {
     var focused by remember { mutableStateOf(false) }
     val glowStrength by animateFloatAsState(
@@ -707,11 +719,7 @@ fun TvTextField(
     val keyboard = LocalSoftwareKeyboardController.current
     val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
     Column(base) {
-        Text(
-            label,
-            color = if (focused) JuyingColors.Gold else JuyingColors.TextSecondary,
-            style = MaterialTheme.typography.labelMedium
-        )
+        TvFieldLabel(label, focused)
         Spacer(Modifier.height(7.dp))
         Box(
             Modifier
@@ -747,9 +755,18 @@ fun TvTextField(
                 visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = if (password) KeyboardType.Password else keyboardType,
-                    imeAction = if (singleLine) ImeAction.Done else ImeAction.Default
+                    imeAction = if (singleLine) imeAction else ImeAction.Default
                 ),
-                keyboardActions = KeyboardActions(onDone = { keyboard?.hide() }),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        keyboard?.hide()
+                        onImeAction?.invoke()
+                    },
+                    onSearch = {
+                        keyboard?.hide()
+                        onImeAction?.invoke()
+                    }
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .onFocusChanged {
@@ -758,6 +775,60 @@ fun TvTextField(
                     }
                     .focusable()
             )
+        }
+    }
+}
+
+@Composable
+fun TvPickerField(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    focusRequester: FocusRequester? = null
+) {
+    var focused by remember { mutableStateOf(false) }
+    val base = if (focusRequester != null) modifier.focusRequester(focusRequester) else modifier
+    Column(base) {
+        TvFieldLabel(label, focused)
+        Spacer(Modifier.height(7.dp))
+        FocusableSurface(
+            onClick = onClick,
+            modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp),
+            shape = RoundedCornerShape(12.dp),
+            focusedScale = 1.008f,
+            backgroundColor = JuyingColors.BackgroundAlt,
+            focusedBackgroundColor = JuyingColors.BackgroundAlt,
+            borderColor = JuyingColors.Outline,
+            focusedBorderColor = JuyingColors.Gold,
+            onFocusChange = { focused = it }
+        ) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 50.dp)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (icon != null) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = if (focused) JuyingColors.Gold else JuyingColors.TextSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(9.dp))
+                }
+                Text(
+                    value,
+                    color = JuyingColors.TextPrimary,
+                    style = MaterialTheme.typography.bodyLarge,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
         }
     }
 }
