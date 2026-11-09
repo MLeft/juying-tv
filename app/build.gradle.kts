@@ -12,8 +12,8 @@ android {
         applicationId = "com.juying.tv"
         minSdk = 28
         targetSdk = 34
-        versionCode = 69
-        versionName = "1.5.32"
+        versionCode = 75
+        versionName = "1.5.38"
         vectorDrawables.useSupportLibrary = true
         ndk {
             // 电视为 armeabi-v7a；同时保留 arm64 以兼容后续设备，避免打包 x86 FFmpeg 库。
@@ -78,7 +78,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("androidx.documentfile:documentfile:1.0.1")
 
-    val composeBom = platform("androidx.compose:compose-bom:2024.06.00")
+    val composeBom = platform("androidx.compose:compose-bom:2024.09.03")
     implementation(composeBom)
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -86,8 +86,6 @@ dependencies {
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-
-    implementation("androidx.tv:tv-foundation:1.0.0-alpha11")
 
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.2")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.2")

@@ -9,7 +9,7 @@
 2. 改动前先读相关模块，不要凭记忆假设代码现状。
 3. 涉及 UI 的改动，必须准备真机验证；不能只编译通过就交付。
 
-## 十二条红线
+## 十三条红线
 
 1. 新功能必须纯遥控器（D-pad）可达，任何状态下焦点都不能丢。
 2. 焦点修饰符顺序：`focusRequester` / `onFocusChanged` / `onPreviewKeyEvent` 必须写在 `focusable()` 或 `clickable()` 之前。
@@ -23,6 +23,7 @@
 10. 封面、标题、字幕匹配不确定时宁缺勿错。
 11. 每次可安装改动必须：构建 + 单测 + 签名 + 真机安装 + 截图验证。
 12. 只允许 `adb install -r` 覆盖安装，每次装机 `versionCode + 1`；禁止卸载。
+13. 列表/页面自动滚动统一走 `JuyingFocusScrollSpec`（spring damping 1 / stiffness 360、64dp 安全边距）；禁止使用 `tv-foundation` 的 `TvLazy*` 组件。
 
 ## 设计与组件
 

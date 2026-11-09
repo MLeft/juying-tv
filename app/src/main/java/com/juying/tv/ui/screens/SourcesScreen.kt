@@ -65,9 +65,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.SourceEntity
 import com.juying.tv.data.db.SourceType
@@ -192,8 +192,8 @@ fun SourcesScreen(
                 focusRequester = addFocus
             )
         } else {
-            TvLazyColumn(
-                state = rememberTvLazyListState(),
+            LazyColumn(
+                state = rememberLazyListState(),
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)

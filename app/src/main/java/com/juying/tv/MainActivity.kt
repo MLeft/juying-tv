@@ -3,6 +3,12 @@ package com.juying.tv
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -12,9 +18,11 @@ import com.juying.tv.mcp.McpServerService
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.juying.tv.ui.AppRoot
+import com.juying.tv.ui.components.JuyingFocusScrollSpec
 import com.juying.tv.ui.theme.JuyingTheme
 
 class MainActivity : ComponentActivity() {
+    @OptIn(ExperimentalFoundationApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -29,7 +37,15 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             JuyingTheme {
-                AppRoot(viewModel())
+                val density = LocalDensity.current
+                val focusScrollSpec = remember(density) {
+                    JuyingFocusScrollSpec(edgeMarginPx = with(density) { 64.dp.toPx() })
+                }
+                CompositionLocalProvider(
+                    LocalBringIntoViewSpec provides focusScrollSpec
+                ) {
+                    AppRoot(viewModel())
+                }
             }
         }
     }

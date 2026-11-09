@@ -50,13 +50,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.grid.TvGridCells
-import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.items
-import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items as listItems
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.CollectionEntity
 import com.juying.tv.data.db.MediaPathRow
@@ -107,7 +107,7 @@ fun CollectionDetailScreen(
     val editFocus = remember { FocusRequester() }
     val backFocus = remember { FocusRequester() }
     val cardFocus = remember { FocusRequester() }
-    val gridState = rememberTvLazyGridState()
+    val gridState = rememberLazyGridState()
     val rememberedSeriesId = com.juying.tv.ui.NavFocusMemory.collectionSeriesId
     // 编辑/添加页返回时优先回到触发按钮；这是进入本次页面时捕获的入口，后续数据变化不参与。
     val pendingAction = remember { com.juying.tv.ui.NavFocusMemory.collectionAction }
@@ -220,8 +220,8 @@ fun CollectionDetailScreen(
                 focusRequester = addFocus
             )
         } else {
-            TvLazyVerticalGrid(
-                columns = TvGridCells.Fixed(6),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(6),
                 state = gridState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
@@ -316,8 +316,8 @@ fun CollectionEditScreen(
         onBack()
     }
 
-    TvLazyColumn(
-        state = rememberTvLazyListState(),
+    LazyColumn(
+        state = rememberLazyListState(),
         modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
         contentPadding = PaddingValues(top = 20.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -576,9 +576,9 @@ fun CollectionPickerScreen(
                     action = onDone
                 )
             } else {
-                TvLazyVerticalGrid(
-                    columns = TvGridCells.Fixed(6),
-                    state = rememberTvLazyGridState(),
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(6),
+                    state = rememberLazyGridState(),
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -744,8 +744,8 @@ private fun DirectoryCollectionPicker(
         )
         Spacer(Modifier.height(8.dp))
 
-        TvLazyColumn(
-            state = rememberTvLazyListState(),
+        LazyColumn(
+            state = rememberLazyListState(),
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 30.dp),
             verticalArrangement = Arrangement.spacedBy(7.dp)
@@ -840,8 +840,8 @@ fun HiddenManageScreen(
     val hidden by viewModel.hiddenSeries.collectAsStateWithLifecycle()
     val backFocus = remember { FocusRequester() }
     RegisterScreenFocus(backFocus)
-    TvLazyColumn(
-        state = rememberTvLazyListState(),
+    LazyColumn(
+        state = rememberLazyListState(),
         modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp),
         contentPadding = PaddingValues(top = 20.dp, bottom = 36.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)

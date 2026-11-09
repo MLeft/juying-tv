@@ -118,7 +118,7 @@ Modifier.onPreviewKeyEvent { e ->
 }
 ```
 
-- 设置类长列表优先用 `Column + verticalScroll`；`TvLazyColumn` 在滚动到中后段后可能出现上下键整体失灵，必须使用时要在真机验证首项、末项和滚动后三段。
+- 设置类长列表优先用 `Column + verticalScroll`；其余列表统一用 foundation `LazyColumn` / `LazyRow` / `LazyVerticalGrid`，不要用 `TvLazyColumn` 系列（见 §5）。
 
 ### 3.4 弹窗、PIN 与对话框
 
@@ -143,7 +143,7 @@ Modifier.onPreviewKeyEvent { e ->
 
 1. 先用 `adb shell input keyevent KEYCODE_DPAD_*` 走一遍完整链路，每步截图确认焦点位置。
 2. 不要盲按后凭猜判断；截图里的焦点描边/高亮是唯一可靠依据。
-3. 检查修饰符顺序、`focusProperties` 是否在中段断路、列表是否用了 TvLazy。
+3. 检查修饰符顺序、`focusProperties` 是否在中段断路、列表是否误用了 `TvLazy*`。
 4. 面板关闭后焦点是否回到触发控件。
 
 ---
@@ -289,12 +289,17 @@ Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
 | 焦点缩放/阴影 | spring，damping 0.72 / stiffness 560 |
 | 焦点描边/底色 | tween 150ms |
 | 焦点泛光 | tween 150ms 渐入渐出 |
+| 列表/页面自动滚动 | spring，damping 1 / stiffness 360；四周保留 64dp 安全边距 |
 | 面板进出 | fade 120–160ms + slide 140–180ms |
 | 页面切换 | 淡入 + 轻微位移 180ms |
 | 骨架屏脉冲 | 900–1200ms 循环，低对比 |
 | Toast | 入场 160–180ms，停留 2.4s |
 | 定位 HUD | 停留 1.8s，随后淡出 |
 | 进度条聚焦加粗 | 3dp → 7dp，160ms |
+
+- **MUST** 焦点滚动统一走 `JuyingFocusScrollSpec`（`MainActivity` 通过 `LocalBringIntoViewSpec` 全局注入）：damping 1 / stiffness 360，四周 64dp 安全边距，保证卡片标题（在焦点节点之外）不被裁掉。
+- **禁止**使用 `androidx.tv:tv-foundation` 的 `TvLazyColumn` / `TvLazyRow` / `TvLazyVerticalGrid`：它们把 `TvBringIntoViewSpec`（stiffness 1500）写死传给 `scrollableWithPivot`，绕开全局规格，表现为滚动“要么顿一下、要么一下滑过去”。列表统一用 foundation `LazyColumn` / `LazyRow` / `LazyVerticalGrid` + `rememberLazyListState` / `rememberLazyGridState`。
+- 条目聚焦时，如果标题/副标题在可聚焦节点之外（例如首页卡片的标题在图片下方），必须给滚动规格留出足够安全边距，并在真机确认标题完整可见。
 
 - **MUST** 所有状态变化都有反馈：加载、空、错误、成功、处理中。
 - 长任务（扫描、刮削、AI）必须有持续进度与阶段文案，完成后保留明确结果；不能只给 3 秒 toast。
@@ -483,6 +488,8 @@ ADB_USB=0 ~/ptools33/platform-tools/adb shell dumpsys package com.juying.tv | gr
 | 焦点不够醒目、和金色选中元素混在一起 | 焦点只有金边，没有泛光和暖底；选中态过度高亮 | R04 / 4.3 焦点四件套 |
 | 聚焦时泛光被切平/缺一块 | 滚动或 Lazy 容器没有留出 10dp 安全内边距 | 4.3 泛光安全边距 |
 | 左右移动焦点时整个内容轻微上下滑动 | 滚动列表中的卡片使用聚焦缩放，缩放边界触发了 bringIntoView | 4.3 卡片禁止缩放 |
+| 上下切换货架/列表时“顿一下”或“嗖地滑过去” | 用了 `TvLazy*`，其内置 stiffness 1500 的 bringIntoView 绕开了全局规格 | R13 / 5 |
+| 卡片聚焦后标题被裁掉一半 | 自动滚动安全边距小于标题高度（64dp） | R13 / 5 |
 | 面板很宽、右侧大片留白 | 没有复用面板规格，用信息量决定宽度 | R05 / 4.4 |
 | 胶囊里的文字偏左 | 缺 `fillMaxWidth + TextAlign.Center` | R06 / 4.5 |
 | 同一表单里输入框高矮/标签位置不一 | 选择器、状态块各自手写样式 | 4.9 |

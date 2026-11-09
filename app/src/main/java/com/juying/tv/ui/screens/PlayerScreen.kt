@@ -116,13 +116,13 @@ import androidx.media3.extractor.ts.TsExtractor
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
-import androidx.tv.foundation.lazy.grid.TvGridCells
-import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.itemsIndexed
-import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.JuyingApp
 import coil.compose.AsyncImage
@@ -1520,7 +1520,7 @@ private fun EpisodePanel(
     val episodes = bundle?.episodes.orEmpty()
     val multiSeason = remember(episodes) { episodes.map { it.season }.distinct().size > 1 }
     val firstFocus = remember { FocusRequester() }
-    val state = rememberTvLazyGridState()
+    val state = rememberLazyGridState()
 
     LaunchedEffect(currentIndex) {
         var waited = 0
@@ -1565,8 +1565,8 @@ private fun EpisodePanel(
                 TvButton("关闭", onClose, primary = false)
             }
             Spacer(Modifier.height(12.dp))
-            TvLazyVerticalGrid(
-                columns = TvGridCells.Fixed(2),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
                 state = state,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 24.dp),
@@ -1942,7 +1942,7 @@ private fun LocalSubtitleBrowserPanel(
     var currentDir by remember { mutableStateOf(roots.firstOrNull()?.second ?: usbRoot) }
     var entries by remember { mutableStateOf<List<File>>(emptyList()) }
     val firstFocus = remember { FocusRequester() }
-    val state = rememberTvLazyListState()
+    val state = rememberLazyListState()
 
     LaunchedEffect(currentDir) {
         entries = withContext(Dispatchers.IO) {
@@ -2027,7 +2027,7 @@ private fun LocalSubtitleBrowserPanel(
                     modifier = Modifier.padding(12.dp)
                 )
             } else {
-                TvLazyColumn(
+                LazyColumn(
                     state = state,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -2096,7 +2096,7 @@ private fun OnlineSubtitleResultPanel(
     onSearchAgain: () -> Unit
 ) {
     val firstFocus = remember { FocusRequester() }
-    val state = rememberTvLazyListState()
+    val state = rememberLazyListState()
     LaunchedEffect(results) {
         delay(100)
         runCatching { firstFocus.requestFocus() }
@@ -2135,7 +2135,7 @@ private fun OnlineSubtitleResultPanel(
                 TvButton("换个关键词", onSearchAgain, primary = true)
             } else {
                 Spacer(Modifier.height(12.dp))
-                TvLazyColumn(
+                LazyColumn(
                     state = state,
                     modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(6.dp),

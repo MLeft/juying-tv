@@ -46,9 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.juying.tv.JuyingApp
 import com.juying.tv.data.source.QuarkConfig
 import com.juying.tv.data.source.QuarkRoot
@@ -248,8 +248,8 @@ fun QuarkFolderPickerDialog(
                                 dirs.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                                     Text("此目录没有子文件夹", color = JuyingColors.TextMuted, style = MaterialTheme.typography.bodyMedium)
                                 }
-                                else -> TvLazyColumn(
-                                    state = rememberTvLazyListState(),
+                                else -> LazyColumn(
+                                    state = rememberLazyListState(),
                                     modifier = Modifier.fillMaxSize(),
                                     contentPadding = PaddingValues(start = 8.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -359,8 +359,8 @@ fun QuarkFolderPickerDialog(
                                     )
                                 }
                             } else {
-                                TvLazyColumn(
-                                    state = rememberTvLazyListState(),
+                                LazyColumn(
+                                    state = rememberLazyListState(),
                                     modifier = Modifier.fillMaxSize(),
                                     verticalArrangement = Arrangement.spacedBy(5.dp)
                                 ) {

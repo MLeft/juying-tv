@@ -61,13 +61,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.grid.TvGridCells
-import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.itemsIndexed
-import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items as listItems
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.rememberLazyListState
 import coil.compose.AsyncImage
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.CollectionEntity
@@ -412,9 +412,9 @@ private fun CollectionsContent(
     val restoreCollectionId = com.juying.tv.ui.NavFocusMemory.collectionId
     val restoreCollection = collections.firstOrNull { it.id == restoreCollectionId } ?: collections.firstOrNull()
 
-    TvLazyVerticalGrid(
-        columns = TvGridCells.Fixed(3),
-        state = rememberTvLazyGridState(),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        state = rememberLazyGridState(),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
@@ -597,9 +597,9 @@ private fun AllSeriesGrid(
         )
         return
     }
-    TvLazyVerticalGrid(
-        columns = TvGridCells.Fixed(6),
-        state = rememberTvLazyGridState(),
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(6),
+        state = rememberLazyGridState(),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -637,8 +637,8 @@ private fun ManageContent(
     onOpenSources: () -> Unit,
     onScan: () -> Unit
 ) {
-    TvLazyColumn(
-        state = rememberTvLazyListState(),
+    LazyColumn(
+        state = rememberLazyListState(),
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 40.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)

@@ -40,9 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.MediaEntity
 import com.juying.tv.data.db.SeriesEntity
@@ -189,8 +189,8 @@ private fun SeriesSelector(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    TvLazyColumn(
-        state = rememberTvLazyListState(),
+    LazyColumn(
+        state = rememberLazyListState(),
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
@@ -270,8 +270,8 @@ private fun KidsSeriesPane(
             TvChip("清空本剧", onClick = { viewModel.setSeriesKids(series.id, false) })
         }
         Spacer(Modifier.height(12.dp))
-        TvLazyColumn(
-            state = rememberTvLazyListState(),
+        LazyColumn(
+            state = rememberLazyListState(),
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)

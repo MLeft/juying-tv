@@ -37,10 +37,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.foundation.lazy.list.TvLazyColumn
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.items
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.ContinueItem
 import com.juying.tv.data.db.SeriesEntity
@@ -103,7 +103,7 @@ fun HomeScreen(
     }
 
     val recent = remember(visible) { visible.sortedByDescending { it.createdAt }.take(20) }
-    val columnState = rememberTvLazyListState()
+    val columnState = rememberLazyListState()
     val firstFocus = remember { FocusRequester() }
     val heroDetailsFocus = remember { FocusRequester() }
     val continueFocus = remember { FocusRequester() }
@@ -121,7 +121,7 @@ fun HomeScreen(
             add("all")
         }
     }
-    // TvLazyColumn 前两项固定是顶栏与 Hero；没有“继续观看”时 Hero 不渲染，分区整体上移一项。
+    // LazyColumn 前两项固定是顶栏与 Hero；没有“继续观看”时 Hero 不渲染，分区整体上移一项。
     val sectionBase = if (featured != null) 2 else 1
     val targetSectionIndex = homeShelfKey?.let { sectionKeys.indexOf(it) } ?: -1
     val targetShelfItems = when (homeShelfKey) {
@@ -222,7 +222,7 @@ fun HomeScreen(
                 )
             }
         } else {
-            TvLazyColumn(
+            LazyColumn(
                 state = columnState,
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(start = 32.dp, end = 32.dp, top = 20.dp, bottom = 36.dp),
@@ -471,7 +471,7 @@ private fun ContinueShelf(
     restoreSeriesId: String? = null,
     focusRequester: FocusRequester? = null
 ) {
-    val listState = rememberTvLazyListState()
+    val listState = rememberLazyListState()
     // 刚看完的单集可能已经移出“继续观看”，此时退回到同一系列的下一张卡片。
     val restoreIndex = remember(items, restoreMediaId, restoreSeriesId) {
         val byMedia = if (restoreMediaId == null) -1 else items.indexOfFirst { it.mediaId == restoreMediaId }
@@ -498,7 +498,7 @@ private fun ContinueShelf(
             modifier = Modifier.padding(horizontal = 2.dp)
         )
         Spacer(Modifier.height(14.dp))
-        TvLazyRow(
+        LazyRow(
             state = listState,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)
@@ -588,7 +588,7 @@ fun SeriesShelf(
     focusRequester: FocusRequester? = null
 ) {
     if (seriesList.isEmpty()) return
-    val listState = rememberTvLazyListState()
+    val listState = rememberLazyListState()
     val restoreIndex = remember(seriesList, restoreSeriesId) {
         if (restoreSeriesId == null) -1 else seriesList.indexOfFirst { it.id == restoreSeriesId }
     }
@@ -615,7 +615,7 @@ fun SeriesShelf(
             }
         )
         Spacer(Modifier.height(14.dp))
-        TvLazyRow(
+        LazyRow(
             state = listState,
             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(14.dp)

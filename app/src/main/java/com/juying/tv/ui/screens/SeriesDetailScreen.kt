@@ -57,13 +57,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
-import androidx.tv.foundation.lazy.grid.TvGridCells
-import androidx.tv.foundation.lazy.grid.TvLazyVerticalGrid
-import androidx.tv.foundation.lazy.grid.itemsIndexed
-import androidx.tv.foundation.lazy.list.TvLazyRow
-import androidx.tv.foundation.lazy.list.items as listItems
-import androidx.tv.foundation.lazy.list.rememberTvLazyListState
-import androidx.tv.foundation.lazy.grid.rememberTvLazyGridState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items as listItems
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import com.juying.tv.AppViewModel
 import com.juying.tv.data.db.CollectionEntity
 import com.juying.tv.data.db.MediaEntity
@@ -113,7 +113,7 @@ fun SeriesDetailScreen(
     val chipsFocus = remember { FocusRequester() }
     val firstEpisodeFocus = remember { FocusRequester() }
     val episodeFocus = remember { FocusRequester() }
-    val episodeGridState = rememberTvLazyGridState()
+    val episodeGridState = rememberLazyGridState()
     val rememberedEpisodeId = com.juying.tv.ui.NavFocusMemory.episodeId
         .takeIf { com.juying.tv.ui.NavFocusMemory.episodeSeriesId == seriesId }
 
@@ -139,25 +139,50 @@ fun SeriesDetailScreen(
         if (rememberedEpisodeId == null) -1 else visibleMedia.indexOfFirst { it.id == rememberedEpisodeId }
     }
     val restoreEpisode = restoreEpisodeIndex >= 0
+    // 有上次播放的单集、但列表还没返回：先不抢焦点，等数据到达再直接落到那一集。
+    val memoryEpisodePending = rememberedEpisodeId != null && media.isEmpty()
     val entryTarget = if (restoreEpisode) episodeFocus else playFocus
     RegisterScreenFocus(entryTarget)
     var entryFocusDone by remember(seriesId) { mutableStateOf(false) }
-    LaunchedEffect(seriesId, media.size, restoreEpisodeIndex) {
+    // target / restoreEpisode 变化也要重新触发：数据晚到时播放按钮才从禁用变为可聚焦。
+    // series?.id 不能少：剧集行晚于本效果加载时，播放按钮之前根本没有进入组合。
+    LaunchedEffect(
+        seriesId,
+        series?.id,
+        media.size,
+        restoreEpisodeIndex,
+        target?.id,
+        restoreEpisode
+    ) {
         if (entryFocusDone) return@LaunchedEffect
-        // 单集列表尚未返回时先等待，避免把焦点抢先放到播放按钮。
-        if (rememberedEpisodeId != null && media.isEmpty()) delay(900) else delay(200)
+        if (memoryEpisodePending) {
+            // 最多等 2 秒；media.size 变化会自动重启本效果并聚焦目标单集。
+            repeat(20) {
+                delay(100)
+                if (media.isNotEmpty()) return@LaunchedEffect
+            }
+        }
         if (restoreEpisode) {
             runCatching { episodeGridState.scrollToItem(restoreEpisodeIndex) }
+            delay(60)
+        } else {
             delay(80)
         }
-        repeat(16) {
+        repeat(14) {
             if (runCatching { entryTarget.requestFocus() }.isSuccess) {
-                entryFocusDone = true
-                return@LaunchedEffect
+                // 页面切换时旧焦点节点被移除，可能在请求成功后的下一帧把焦点清空；
+                // 稍等再请求一次，确认焦点稳定后才结束。
+                delay(180)
+                if (runCatching { entryTarget.requestFocus() }.isSuccess) {
+                    entryFocusDone = true
+                    return@LaunchedEffect
+                }
+                return@repeat
             }
-            delay(100)
+            delay(80)
         }
-        entryFocusDone = true
+        // 单集列表晚于重试窗口到达时，media.size 变化会重新触发本效果；
+        // 这里不把 entryFocusDone 置为 true，避免数据刚到就永久放弃聚焦。
     }
     LaunchedEffect(seasons) {
         if (selectedSeason != null && selectedSeason !in seasons) selectedSeason = null
@@ -399,8 +424,8 @@ fun SeriesDetailScreen(
         }
         if (seasons.size > 1) {
             Spacer(Modifier.height(8.dp))
-            TvLazyRow(
-                state = rememberTvLazyListState(),
+            LazyRow(
+                state = rememberLazyListState(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item(key = "all") {
@@ -438,8 +463,8 @@ fun SeriesDetailScreen(
                 action = null
             )
         } else {
-            TvLazyVerticalGrid(
-                columns = TvGridCells.Fixed(4),
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(4),
                 state = episodeGridState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 20.dp),
